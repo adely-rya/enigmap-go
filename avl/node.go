@@ -12,4 +12,5 @@ type Node[V any] struct {
 
 	Left  NodeID
 	Right NodeID
+	Valid uint8
 }

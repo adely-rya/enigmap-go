@@ -6,7 +6,7 @@ import (
 	"github.com/adely-rya/enigmap-go/omap"
 )
 
-func NewMemory[V any]() omap.Store[V] {
+func NewMemory[V any](maxNodes uint64) (omap.Store[V], error) {
 	store := memory.New[V]()
-	return avl.NewTree[V](store)
+	return avl.NewTree[V](store, maxNodes)
 }
