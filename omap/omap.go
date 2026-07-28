@@ -1,4 +1,4 @@
-package kv
+package omap
 
 type Store interface {
 	Get(key []byte) ([]byte, error)
