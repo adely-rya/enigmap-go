@@ -9,8 +9,9 @@ import (
 
 func TestStoreAllocateLoadAndUpdate(t *testing.T) {
 	store := New[string]()
+	key := avl.NewKey(make([]byte, avl.KeySize))
 
-	id, err := store.Allocate(avl.Node[string]{Key: []byte("key"), Value: "first"})
+	id, err := store.Allocate(avl.Node[string]{Key: key, Value: "first"})
 	if err != nil {
 		t.Fatalf("allocate node: %v", err)
 	}
