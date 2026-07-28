@@ -50,4 +50,33 @@ func TestStoreRejectsUnknownNode(t *testing.T) {
 	if err := store.Update(42, avl.Node[string]{}); !errors.Is(err, ErrNodeNotFound) {
 		t.Fatalf("update error = %v, want %v", err, ErrNodeNotFound)
 	}
+	if err := store.FreeMaybe(42, 1); !errors.Is(err, ErrNodeNotFound) {
+		t.Fatalf("free error = %v, want %v", err, ErrNodeNotFound)
+	}
+}
+
+func TestStoreFreeMaybe(t *testing.T) {
+	store := New[string]()
+	id, err := store.Allocate(avl.Node[string]{Value: "candidate"})
+	if err != nil {
+		t.Fatalf("allocate node: %v", err)
+	}
+
+	if err := store.FreeMaybe(id, 0); err != nil {
+		t.Fatalf("FreeMaybe(condition=0): %v", err)
+	}
+	if _, err := store.Load(id); err != nil {
+		t.Fatalf("candidate was freed with condition=0: %v", err)
+	}
+
+	if err := store.FreeMaybe(id, 1); err != nil {
+		t.Fatalf("FreeMaybe(condition=1): %v", err)
+	}
+	if _, err := store.Load(id); !errors.Is(err, ErrNodeNotFound) {
+		t.Fatalf("load freed node error = %v, want %v", err, ErrNodeNotFound)
+	}
+
+	if err := store.FreeMaybe(42, 0); err != nil {
+		t.Fatalf("FreeMaybe(unknown, condition=0): %v", err)
+	}
 }

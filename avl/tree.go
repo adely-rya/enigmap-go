@@ -26,22 +26,36 @@ func NewTree[V any](
 		return nil, ErrNilValueSelector
 	}
 
-	fakeID, err := store.Allocate(Node[V]{Valid: 0})
+	fakeID, err := store.Allocate(Node[V]{
+		Balance: BalanceBalanced,
+		Valid:   0,
+	})
 	if err != nil {
 		return nil, err
 	}
 
 	fakeNode := Node[V]{
-		Left:  fakeID,
-		Right: fakeID,
-		Valid: 0,
+		Balance: BalanceBalanced,
+		Left:    fakeID,
+		Right:   fakeID,
+		Valid:   0,
 	}
 	if err := store.Update(fakeID, fakeNode); err != nil {
 		return nil, err
 	}
 
+	rootID, err := store.Allocate(Node[V]{
+		Balance: BalanceBalanced,
+		Left:    fakeID,
+		Right:   fakeID,
+		Valid:   0,
+	})
+	if err != nil {
+		return nil, err
+	}
+
 	return &Tree[V]{
-		root:     NullAddress,
+		root:     rootID,
 		fake:     fakeID,
 		maxDepth: calculateMaxDepth(maxNodes),
 		store:    store,
@@ -59,6 +73,7 @@ func calculateMaxDepth(maxNodes uint64) int {
 
 // AVL探索は、終了した深さを隠すため常にmaxDepth回のnode accessを行う。
 
+// Root returns the fixed root sentinel ID.
 func (t *Tree[V]) Root() NodeID {
 	return t.root
 }

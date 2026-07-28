@@ -18,6 +18,7 @@ type treeTestStore[V any] struct {
 	allocated    []Node[V]
 	updatedIDs   []NodeID
 	updatedNodes []Node[V]
+	freedIDs     []NodeID
 }
 
 func newTreeTestStore[V any]() *treeTestStore[V] {
@@ -59,6 +60,18 @@ func (s *treeTestStore[V]) Update(id NodeID, node Node[V]) error {
 	return nil
 }
 
+func (s *treeTestStore[V]) FreeMaybe(id NodeID, condition int) error {
+	if condition&1 == 0 {
+		return nil
+	}
+	if _, ok := s.nodes[id]; !ok {
+		return errStoreOperation
+	}
+	delete(s.nodes, id)
+	s.freedIDs = append(s.freedIDs, id)
+	return nil
+}
+
 var stringSelector = omap.ValueSelectorFunc[string](
 	func(current, candidate string, condition int) string {
 		if condition == 1 {
@@ -68,7 +81,7 @@ var stringSelector = omap.ValueSelectorFunc[string](
 	},
 )
 
-func TestNewTreeCreatesSelfReferentialFakeNode(t *testing.T) {
+func TestNewTreeCreatesFakeNodeAndRootSentinel(t *testing.T) {
 	store := newTreeTestStore[string]()
 
 	tree, err := NewTree[string](store, 1024, stringSelector)
@@ -94,6 +107,32 @@ func TestNewTreeCreatesSelfReferentialFakeNode(t *testing.T) {
 	}
 	if fake.Valid != 0 {
 		t.Fatalf("fake Valid = %d, want 0", fake.Valid)
+	}
+	if fake.Balance != BalanceBalanced {
+		t.Fatalf("fake Balance = %d, want %d", fake.Balance, BalanceBalanced)
+	}
+
+	if tree.root != 8 {
+		t.Fatalf("root sentinel ID = %d, want 8", tree.root)
+	}
+	root, err := store.Load(tree.root)
+	if err != nil {
+		t.Fatalf("load root sentinel: %v", err)
+	}
+	if root.Left != tree.fake || root.Right != tree.fake {
+		t.Fatalf(
+			"root sentinel children = (%d, %d), want (%d, %d)",
+			root.Left,
+			root.Right,
+			tree.fake,
+			tree.fake,
+		)
+	}
+	if root.Valid != 0 {
+		t.Fatalf("root sentinel Valid = %d, want 0", root.Valid)
+	}
+	if root.Balance != BalanceBalanced {
+		t.Fatalf("root sentinel Balance = %d, want %d", root.Balance, BalanceBalanced)
 	}
 }
 

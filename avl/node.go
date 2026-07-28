@@ -4,6 +4,14 @@ type NodeID uint64
 
 const NullAddress NodeID = 0
 
+type Balance uint8
+
+const (
+	BalanceLeft Balance = iota
+	BalanceRight
+	BalanceBalanced
+)
+
 func selectNodeID(current, candidate NodeID, condition int) NodeID {
 	mask := uint64(0) - uint64(condition&1)
 	return NodeID(
@@ -21,7 +29,7 @@ type Node[V any] struct {
 	Key   Key // key component of ptr in the paper
 	Value V   // v in the paper
 
-	Height int
+	Balance Balance // b in the paper
 
 	Left  NodeID // address component of lptr in the paper
 	Right NodeID // address component of rptr in the paper

@@ -5,11 +5,7 @@ import "crypto/subtle"
 func (t *Tree[V]) Get(key []byte) (V, bool, error) {
 	searchKey := NewKey(key)
 
-	current := selectNodeID(
-		t.fake,
-		t.root,
-		nodeIDPresent(t.root),
-	)
+	current := t.root
 	found := 0
 	var result V
 
@@ -25,6 +21,7 @@ func (t *Tree[V]) Get(key []byte) (V, bool, error) {
 		right := subtle.ConstantTimeEq(int32(comparison), 1) //rightに進むか判定  rightなら1
 		valid := subtle.ConstantTimeByteEq(node.Valid, 1)    //ダミーか判定　実nodeなら1
 		match := equal & valid                               //ダミーじゃない、かつkeyが一致したか判定
+		right &= valid                                       // root sentinelとfake nodeは常にLeftへ進む
 
 		result = t.selector.Select(result, node.Value, match)
 		found |= match //すでに見つかったのかを判定　探しているkeyが見つかっていたらfound = 1

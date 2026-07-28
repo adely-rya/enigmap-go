@@ -42,3 +42,17 @@ func (s *Store[V]) Update(id avl.NodeID, node avl.Node[V]) error {
 	s.nodes[id] = node
 	return nil
 }
+
+// FreeMaybe frees id when condition is 1. The memory backend is intended for
+// functional testing; an ORAM backend must keep the physical access trace
+// independent of condition.
+func (s *Store[V]) FreeMaybe(id avl.NodeID, condition int) error {
+	if condition&1 == 0 {
+		return nil
+	}
+	if _, ok := s.nodes[id]; !ok {
+		return ErrNodeNotFound
+	}
+	delete(s.nodes, id)
+	return nil
+}
