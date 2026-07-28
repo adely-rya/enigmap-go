@@ -21,13 +21,13 @@ func (t *Tree[V]) Get(key []byte) (V, bool, error) {
 		}
 
 		comparison := CompareKey(searchKey, node.Key)
-		equal := subtle.ConstantTimeEq(int32(comparison), 0)
-		right := subtle.ConstantTimeEq(int32(comparison), 1)
-		valid := subtle.ConstantTimeByteEq(node.Valid, 1)
-		match := equal & valid
+		equal := subtle.ConstantTimeEq(int32(comparison), 0) //keyのマッチ判定 イコールなら1
+		right := subtle.ConstantTimeEq(int32(comparison), 1) //rightに進むか判定  rightなら1
+		valid := subtle.ConstantTimeByteEq(node.Valid, 1)    //ダミーか判定　実nodeなら1
+		match := equal & valid                               //ダミーじゃない、かつkeyが一致したか判定
 
 		result = t.selector.Select(result, node.Value, match)
-		found |= match
+		found |= match //すでに見つかったのかを判定　探しているkeyが見つかっていたらfound = 1
 
 		next := selectNodeID(node.Left, node.Right, right)
 		current = selectNodeID(
