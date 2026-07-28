@@ -1,15 +1,31 @@
 package avl
 
-import "math/bits"
+import (
+	"errors"
+	"math/bits"
+
+	"github.com/adely-rya/enigmap-go/omap"
+)
+
+var ErrNilValueSelector = errors.New("value selector is required")
 
 type Tree[V any] struct {
 	root     NodeID
 	fake     NodeID
 	maxDepth int
 	store    NodeStore[V]
+	selector omap.ValueSelector[V]
 }
 
-func NewTree[V any](store NodeStore[V], maxNodes uint64) (*Tree[V], error) {
+func NewTree[V any](
+	store NodeStore[V],
+	maxNodes uint64,
+	selector omap.ValueSelector[V],
+) (*Tree[V], error) {
+	if selector == nil {
+		return nil, ErrNilValueSelector
+	}
+
 	fakeID, err := store.Allocate(Node[V]{Valid: 0})
 	if err != nil {
 		return nil, err
@@ -29,6 +45,7 @@ func NewTree[V any](store NodeStore[V], maxNodes uint64) (*Tree[V], error) {
 		fake:     fakeID,
 		maxDepth: calculateMaxDepth(maxNodes),
 		store:    store,
+		selector: selector,
 	}, nil
 }
 
@@ -39,6 +56,8 @@ func calculateMaxDepth(maxNodes uint64) int {
 	baseDepth := bits.Len64(maxNodes + 1)
 	return baseDepth + baseDepth/2 + 1
 }
+
+// AVL探索は、終了した深さを隠すため常にmaxDepth回のnode accessを行う。
 
 func (t *Tree[V]) Root() NodeID {
 	return t.root

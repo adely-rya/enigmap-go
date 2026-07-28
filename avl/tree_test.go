@@ -3,6 +3,8 @@ package avl
 import (
 	"errors"
 	"testing"
+
+	"github.com/adely-rya/enigmap-go/omap"
 )
 
 var errStoreOperation = errors.New("store operation failed")
@@ -10,6 +12,7 @@ var errStoreOperation = errors.New("store operation failed")
 type treeTestStore[V any] struct {
 	nextID       NodeID
 	nodes        map[NodeID]Node[V]
+	loadIDs      []NodeID
 	allocateErr  error
 	updateErr    error
 	allocated    []Node[V]
@@ -37,6 +40,7 @@ func (s *treeTestStore[V]) Allocate(node Node[V]) (NodeID, error) {
 }
 
 func (s *treeTestStore[V]) Load(id NodeID) (Node[V], error) {
+	s.loadIDs = append(s.loadIDs, id)
 	node, ok := s.nodes[id]
 	if !ok {
 		return Node[V]{}, errStoreOperation
@@ -55,10 +59,19 @@ func (s *treeTestStore[V]) Update(id NodeID, node Node[V]) error {
 	return nil
 }
 
+var stringSelector = omap.ValueSelectorFunc[string](
+	func(current, candidate string, condition int) string {
+		if condition == 1 {
+			return candidate
+		}
+		return current
+	},
+)
+
 func TestNewTreeCreatesSelfReferentialFakeNode(t *testing.T) {
 	store := newTreeTestStore[string]()
 
-	tree, err := NewTree[string](store, 1024)
+	tree, err := NewTree[string](store, 1024, stringSelector)
 	if err != nil {
 		t.Fatalf("NewTree(): %v", err)
 	}
@@ -112,7 +125,7 @@ func TestNewTreePropagatesStoreErrors(t *testing.T) {
 		store := newTreeTestStore[string]()
 		store.allocateErr = errStoreOperation
 
-		if _, err := NewTree[string](store, 1); !errors.Is(err, errStoreOperation) {
+		if _, err := NewTree[string](store, 1, stringSelector); !errors.Is(err, errStoreOperation) {
 			t.Fatalf("NewTree() error = %v, want %v", err, errStoreOperation)
 		}
 	})
@@ -121,8 +134,16 @@ func TestNewTreePropagatesStoreErrors(t *testing.T) {
 		store := newTreeTestStore[string]()
 		store.updateErr = errStoreOperation
 
-		if _, err := NewTree[string](store, 1); !errors.Is(err, errStoreOperation) {
+		if _, err := NewTree[string](store, 1, stringSelector); !errors.Is(err, errStoreOperation) {
 			t.Fatalf("NewTree() error = %v, want %v", err, errStoreOperation)
+		}
+	})
+
+	t.Run("nil selector", func(t *testing.T) {
+		store := newTreeTestStore[string]()
+
+		if _, err := NewTree[string](store, 1, nil); !errors.Is(err, ErrNilValueSelector) {
+			t.Fatalf("NewTree() error = %v, want %v", err, ErrNilValueSelector)
 		}
 	})
 }
