@@ -17,14 +17,14 @@ func (t *Tree[V]) Get(key []byte) (V, bool, error) {
 		}
 
 		comparison := CompareKey(searchKey, node.Key)
-		equal := subtle.ConstantTimeEq(int32(comparison), 0) //keyのマッチ判定 イコールなら1
-		right := subtle.ConstantTimeEq(int32(comparison), 1) //rightに進むか判定  rightなら1
-		valid := subtle.ConstantTimeByteEq(node.Valid, 1)    //ダミーか判定　実nodeなら1
-		match := equal & valid                               //ダミーじゃない、かつkeyが一致したか判定
-		right &= valid                                       // root sentinelとfake nodeは常にLeftへ進む
+		equal := subtle.ConstantTimeEq(int32(comparison), 0) // if key == node.Key { 1 } else { 0 }; 一致なら1
+		right := subtle.ConstantTimeEq(int32(comparison), 1) // if key > node.Key { 1 } else { 0 }; 右へ進むなら1
+		valid := subtle.ConstantTimeByteEq(node.Valid, 1)    // if node is real { 1 } else { 0 }; 実ノードなら1
+		match := equal & valid                               // if equal == 1 && valid == 1 { 1 } else { 0 }; 実ノードで一致なら1
+		right &= valid                                       // if valid == 0 { right = 0 }; dummyは左へ
 
-		result = t.selector.Select(result, node.Value, match)
-		found |= match //すでに見つかったのかを判定　探しているkeyが見つかっていたらfound = 1
+		result = selectValue(result, node.Value, match)
+		found |= match // if match == 1 { found = 1 }; 一度一致したら1
 
 		next := selectNodeID(node.Left, node.Right, right)
 		current = selectNodeID(

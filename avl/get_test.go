@@ -21,7 +21,7 @@ func getTestNode(first byte, value string, fake NodeID) Node[string] {
 func TestGetAlwaysLoadsMaxDepth(t *testing.T) {
 	t.Run("empty", func(t *testing.T) {
 		store := newTreeTestStore[string]()
-		tree, err := NewTree[string](store, 8, stringSelector)
+		tree, err := NewTree[string](store, 8)
 		if err != nil {
 			t.Fatalf("NewTree(): %v", err)
 		}
@@ -43,7 +43,7 @@ func TestGetAlwaysLoadsMaxDepth(t *testing.T) {
 
 	t.Run("found at root", func(t *testing.T) {
 		store := newTreeTestStore[string]()
-		tree, err := NewTree[string](store, 8, stringSelector)
+		tree, err := NewTree[string](store, 8)
 		if err != nil {
 			t.Fatalf("NewTree(): %v", err)
 		}
@@ -76,7 +76,7 @@ func TestGetAlwaysLoadsMaxDepth(t *testing.T) {
 
 	t.Run("found below root", func(t *testing.T) {
 		store := newTreeTestStore[string]()
-		tree, err := NewTree[string](store, 8, stringSelector)
+		tree, err := NewTree[string](store, 8)
 		if err != nil {
 			t.Fatalf("NewTree(): %v", err)
 		}
@@ -118,7 +118,7 @@ func TestGetAlwaysLoadsMaxDepth(t *testing.T) {
 
 	t.Run("missing", func(t *testing.T) {
 		store := newTreeTestStore[string]()
-		tree, err := NewTree[string](store, 8, stringSelector)
+		tree, err := NewTree[string](store, 8)
 		if err != nil {
 			t.Fatalf("NewTree(): %v", err)
 		}

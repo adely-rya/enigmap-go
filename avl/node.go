@@ -12,7 +12,7 @@ const (
 	BalanceBalanced
 )
 
-func selectNodeID(current, candidate NodeID, condition int) NodeID {
+func selectNodeID(current, candidate NodeID, condition int) NodeID { //conditionが0ならcurrent 1ならcandinateが選択
 	mask := uint64(0) - uint64(condition&1)
 	return NodeID(
 		(uint64(current) &^ mask) |

@@ -1,31 +1,18 @@
 package avl
 
-import (
-	"errors"
-	"math/bits"
-
-	"github.com/adely-rya/enigmap-go/omap"
-)
-
-var ErrNilValueSelector = errors.New("value selector is required")
+import "math/bits"
 
 type Tree[V any] struct {
 	root     NodeID
 	fake     NodeID
 	maxDepth int
 	store    NodeStore[V]
-	selector omap.ValueSelector[V]
 }
 
 func NewTree[V any](
 	store NodeStore[V],
 	maxNodes uint64,
-	selector omap.ValueSelector[V],
 ) (*Tree[V], error) {
-	if selector == nil {
-		return nil, ErrNilValueSelector
-	}
-
 	fakeID, err := store.Allocate(Node[V]{
 		Balance: BalanceBalanced,
 		Valid:   0,
@@ -59,7 +46,6 @@ func NewTree[V any](
 		fake:     fakeID,
 		maxDepth: calculateMaxDepth(maxNodes),
 		store:    store,
-		selector: selector,
 	}, nil
 }
 

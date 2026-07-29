@@ -7,7 +7,7 @@ import (
 
 func TestPutAllocatesCandidateNode(t *testing.T) {
 	store := newTreeTestStore[string]()
-	tree, err := NewTree[string](store, 8, stringSelector)
+	tree, err := NewTree[string](store, 8)
 	if err != nil {
 		t.Fatalf("NewTree(): %v", err)
 	}
@@ -54,7 +54,7 @@ func TestPutAllocatesCandidateNode(t *testing.T) {
 
 func TestPutPropagatesCandidateAllocationError(t *testing.T) {
 	store := newTreeTestStore[string]()
-	tree, err := NewTree[string](store, 8, stringSelector)
+	tree, err := NewTree[string](store, 8)
 	if err != nil {
 		t.Fatalf("NewTree(): %v", err)
 	}

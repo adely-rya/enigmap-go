@@ -8,8 +8,7 @@ import (
 
 func NewMemory[V any](
 	maxNodes uint64,
-	selector omap.ValueSelector[V],
 ) (omap.Store[V], error) {
 	store := memory.New[V]()
-	return avl.NewTree[V](store, maxNodes, selector)
+	return avl.NewTree[V](store, maxNodes)
 }
