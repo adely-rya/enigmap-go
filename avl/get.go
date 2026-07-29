@@ -30,7 +30,7 @@ func (t *Tree[V]) Get(key []byte) (V, bool, error) {
 		current = selectNodeID(
 			t.fake,
 			next,
-			nodeIDPresent(next),
+			isNotNullAddress(next),
 		)
 	}
 

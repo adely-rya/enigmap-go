@@ -20,9 +20,13 @@ func selectNodeID(current, candidate NodeID, condition int) NodeID { //condition
 	)
 }
 
-func nodeIDPresent(id NodeID) int {
+func isNotNullAddress(id NodeID) int {
 	value := uint64(id)
 	return int((value | (0 - value)) >> 63)
+}
+
+func nodeIDsEqual(a, b NodeID) int {
+	return isNotNullAddress(a^b) ^ 1
 }
 
 type Node[V any] struct {

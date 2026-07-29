@@ -21,6 +21,14 @@ func selectRotationType(
 	return rotationType(selectInt(int(current), int(candidate), condition))
 }
 
+func rotationTypesEqual(a, b rotationType) int {
+	return subtle.ConstantTimeByteEq(byte(a), byte(b))
+}
+
+func balanceFromDirection(right int) Balance {
+	return selectBalance(BalanceLeft, BalanceRight, right)
+}
+
 func selectValue[V any](current, candidate V, condition int) V {
 	if condition&1 == 1 {
 		return candidate
