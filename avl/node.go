@@ -7,9 +7,9 @@ const NullAddress NodeID = 0
 type Balance uint8
 
 const (
-	BalanceLeft Balance = iota
-	BalanceRight
-	BalanceBalanced
+	BalanceLeft     Balance = iota //左に１つ子が多い
+	BalanceRight                   //右に1つ子が多い
+	BalanceBalanced                //左右の高さが同じ
 )
 
 func selectNodeID(current, candidate NodeID, condition int) NodeID { //conditionが0ならcurrent 1ならcandinateが選択
