@@ -4,6 +4,15 @@ type NodeID uint64
 
 const NullAddress NodeID = 0
 
+type Position uint64
+
+type Pointer struct {
+	Address  NodeID
+	Position Position
+}
+
+var NullPointer = Pointer{}
+
 type Balance uint8
 
 const (
@@ -29,13 +38,36 @@ func nodeIDsEqual(a, b NodeID) int {
 	return isNotNullAddress(a^b) ^ 1
 }
 
+func selectPosition(current, candidate Position, condition int) Position {
+	mask := uint64(0) - uint64(condition&1)
+	return Position(
+		(uint64(current) &^ mask) |
+			(uint64(candidate) & mask),
+	)
+}
+
+func selectPointer(current, candidate Pointer, condition int) Pointer {
+	return Pointer{
+		Address:  selectNodeID(current.Address, candidate.Address, condition),
+		Position: selectPosition(current.Position, candidate.Position, condition),
+	}
+}
+
+func pointerAddressesEqual(a, b Pointer) int {
+	return nodeIDsEqual(a.Address, b.Address)
+}
+
+func isNotNullPointer(pointer Pointer) int {
+	return isNotNullAddress(pointer.Address)
+}
+
 type Node[V any] struct {
 	Key   Key // key component of ptr in the paper
 	Value V   // v in the paper
 
 	Balance Balance // b in the paper
 
-	Left  NodeID // address component of lptr in the paper
-	Right NodeID // address component of rptr in the paper
+	Left  Pointer // lptr in the paper
+	Right Pointer // rptr in the paper
 	Valid uint8
 }

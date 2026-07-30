@@ -8,7 +8,7 @@ func getTestKey(first byte) []byte {
 	return key
 }
 
-func getTestNode(first byte, value string, fake NodeID) Node[string] {
+func getTestNode(first byte, value string, fake Pointer) Node[string] {
 	return Node[string]{
 		Key:   NewKey(getTestKey(first)),
 		Value: value,
@@ -154,27 +154,27 @@ func setTestRoot(
 	t *testing.T,
 	tree *Tree[string],
 	store *treeTestStore[string],
-	root NodeID,
+	root Pointer,
 ) {
 	t.Helper()
-	sentinel, err := store.Load(tree.root)
+	sentinel, err := store.BeginAccess(tree.root, store.NewPosition())
 	if err != nil {
 		t.Fatalf("load root sentinel: %v", err)
 	}
 	sentinel.Left = root
-	if err := store.Update(tree.root, sentinel); err != nil {
+	if err := store.FinishAccess(tree.root.Address, sentinel); err != nil {
 		t.Fatalf("update root sentinel: %v", err)
 	}
 }
 
-func assertFixedLoads(t *testing.T, loads []NodeID, want int) {
+func assertFixedLoads(t *testing.T, loads []Pointer, want int) {
 	t.Helper()
 	if len(loads) != want {
 		t.Fatalf("Load() count = %d, want %d: %v", len(loads), want, loads)
 	}
 }
 
-func assertLoadsFrom(t *testing.T, loads []NodeID, start int, want NodeID) {
+func assertLoadsFrom(t *testing.T, loads []Pointer, start int, want Pointer) {
 	t.Helper()
 	for i := start; i < len(loads); i++ {
 		if loads[i] != want {

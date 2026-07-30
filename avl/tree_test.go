@@ -10,7 +10,8 @@ var errStoreOperation = errors.New("store operation failed")
 type treeTestStore[V any] struct {
 	nextID       NodeID
 	nodes        map[NodeID]Node[V]
-	loadIDs      []NodeID
+	loadIDs      []Pointer
+	activeID     NodeID
 	allocateErr  error
 	updateErr    error
 	allocated    []Node[V]
@@ -26,47 +27,62 @@ func newTreeTestStore[V any]() *treeTestStore[V] {
 	}
 }
 
-func (s *treeTestStore[V]) Allocate(node Node[V]) (NodeID, error) {
+func (s *treeTestStore[V]) Allocate(node Node[V]) (Pointer, error) {
 	if s.allocateErr != nil {
-		return 0, s.allocateErr
+		return NullPointer, s.allocateErr
 	}
 
 	id := s.nextID
 	s.nextID++
 	s.nodes[id] = node
 	s.allocated = append(s.allocated, node)
-	return id, nil
+	return Pointer{Address: id}, nil
 }
 
-func (s *treeTestStore[V]) Load(id NodeID) (Node[V], error) {
-	s.loadIDs = append(s.loadIDs, id)
-	node, ok := s.nodes[id]
+func (s *treeTestStore[V]) NewPosition() Position {
+	return 0
+}
+
+func (s *treeTestStore[V]) BeginAccess(
+	pointer Pointer,
+	newPosition Position,
+) (Node[V], error) {
+	if s.activeID != NullAddress {
+		return Node[V]{}, errStoreOperation
+	}
+	s.loadIDs = append(s.loadIDs, pointer)
+	node, ok := s.nodes[pointer.Address]
 	if !ok {
 		return Node[V]{}, errStoreOperation
 	}
+	s.activeID = pointer.Address
 	return node, nil
 }
 
-func (s *treeTestStore[V]) Update(id NodeID, node Node[V]) error {
+func (s *treeTestStore[V]) FinishAccess(id NodeID, node Node[V]) error {
 	if s.updateErr != nil {
 		return s.updateErr
 	}
+	if s.activeID != id {
+		return errStoreOperation
+	}
 
 	s.nodes[id] = node
+	s.activeID = NullAddress
 	s.updatedIDs = append(s.updatedIDs, id)
 	s.updatedNodes = append(s.updatedNodes, node)
 	return nil
 }
 
-func (s *treeTestStore[V]) FreeMaybe(id NodeID, condition int) error {
+func (s *treeTestStore[V]) FreeMaybe(pointer Pointer, condition int) error {
 	if condition&1 == 0 {
 		return nil
 	}
-	if _, ok := s.nodes[id]; !ok {
+	if _, ok := s.nodes[pointer.Address]; !ok {
 		return errStoreOperation
 	}
-	delete(s.nodes, id)
-	s.freedIDs = append(s.freedIDs, id)
+	delete(s.nodes, pointer.Address)
+	s.freedIDs = append(s.freedIDs, pointer.Address)
 	return nil
 }
 
@@ -78,12 +94,15 @@ func TestNewTreeCreatesFakeNodeAndRootSentinel(t *testing.T) {
 		t.Fatalf("NewTree(): %v", err)
 	}
 
-	if tree.fake != 7 {
-		t.Fatalf("fake node ID = %d, want 7", tree.fake)
+	if tree.fake.Address != 7 {
+		t.Fatalf("fake node ID = %d, want 7", tree.fake.Address)
 	}
-	fake, err := store.Load(tree.fake)
+	fake, err := store.BeginAccess(tree.fake, store.NewPosition())
 	if err != nil {
 		t.Fatalf("load fake node: %v", err)
+	}
+	if err := store.FinishAccess(tree.fake.Address, fake); err != nil {
+		t.Fatalf("finish fake node access: %v", err)
 	}
 	if fake.Left != tree.fake || fake.Right != tree.fake {
 		t.Fatalf(
@@ -101,12 +120,15 @@ func TestNewTreeCreatesFakeNodeAndRootSentinel(t *testing.T) {
 		t.Fatalf("fake Balance = %d, want %d", fake.Balance, BalanceBalanced)
 	}
 
-	if tree.root != 8 {
-		t.Fatalf("root sentinel ID = %d, want 8", tree.root)
+	if tree.root.Address != 8 {
+		t.Fatalf("root sentinel ID = %d, want 8", tree.root.Address)
 	}
-	root, err := store.Load(tree.root)
+	root, err := store.BeginAccess(tree.root, store.NewPosition())
 	if err != nil {
 		t.Fatalf("load root sentinel: %v", err)
+	}
+	if err := store.FinishAccess(tree.root.Address, root); err != nil {
+		t.Fatalf("finish root sentinel access: %v", err)
 	}
 	if root.Left != tree.fake || root.Right != tree.fake {
 		t.Fatalf(

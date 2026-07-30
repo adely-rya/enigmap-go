@@ -3,8 +3,8 @@ package avl
 import "math/bits"
 
 type Tree[V any] struct {
-	root     NodeID
-	fake     NodeID
+	root     Pointer
+	fake     Pointer
 	maxDepth int
 	store    NodeStore[V]
 }
@@ -13,7 +13,7 @@ func NewTree[V any](
 	store NodeStore[V],
 	maxNodes uint64,
 ) (*Tree[V], error) {
-	fakeID, err := store.Allocate(Node[V]{
+	fakePointer, err := store.Allocate(Node[V]{
 		Balance: BalanceBalanced,
 		Valid:   0,
 	})
@@ -23,18 +23,21 @@ func NewTree[V any](
 
 	fakeNode := Node[V]{
 		Balance: BalanceBalanced,
-		Left:    fakeID,
-		Right:   fakeID,
+		Left:    fakePointer,
+		Right:   fakePointer,
 		Valid:   0,
 	}
-	if err := store.Update(fakeID, fakeNode); err != nil {
+	if _, err := store.BeginAccess(fakePointer, store.NewPosition()); err != nil {
+		return nil, err
+	}
+	if err := store.FinishAccess(fakePointer.Address, fakeNode); err != nil {
 		return nil, err
 	}
 
-	rootID, err := store.Allocate(Node[V]{
+	rootPointer, err := store.Allocate(Node[V]{
 		Balance: BalanceBalanced,
-		Left:    fakeID,
-		Right:   fakeID,
+		Left:    fakePointer,
+		Right:   fakePointer,
 		Valid:   0,
 	})
 	if err != nil {
@@ -42,8 +45,8 @@ func NewTree[V any](
 	}
 
 	return &Tree[V]{
-		root:     rootID,
-		fake:     fakeID,
+		root:     rootPointer,
+		fake:     fakePointer,
 		maxDepth: calculateMaxDepth(maxNodes),
 		store:    store,
 	}, nil
@@ -60,6 +63,6 @@ func calculateMaxDepth(maxNodes uint64) int {
 // AVL探索は、終了した深さを隠すため常にmaxDepth回のnode accessを行う。
 
 // Root returns the fixed root sentinel ID.
-func (t *Tree[V]) Root() NodeID {
+func (t *Tree[V]) Root() Pointer {
 	return t.root
 }
