@@ -3,13 +3,13 @@ package eoram
 import (
 	"errors"
 
-	"github.com/adely-rya/enigmap-go/codec"
+	"github.com/adely-rya/enigmap-go/avl"
+	"github.com/adely-rya/enigmap-go/omap"
 )
 
 var (
-	ErrInvalidCapacity  = errors.New("eoram: capacity must be positive")
-	ErrNilValueCodec    = errors.New("eoram: value codec is required")
-	ErrInvalidValueSize = errors.New("eoram: value codec size must be positive")
+	ErrInvalidCapacity = errors.New("eoram: capacity must be positive")
+	ErrNotImplemented  = errors.New("eoram: Path ORAM storage is not implemented")
 )
 
 const DefaultDataFile = "/dev/shm/enigmap/oram-large-buckets.db"
@@ -18,39 +18,66 @@ const DefaultDataFile = "/dev/shm/enigmap/oram-large-buckets.db"
 //
 // The constructor owns the stable configuration boundary. Path ORAM, Large
 // Bucket cache, encryption, and file storage are added behind this type.
-type ORAMClient[V any] struct {
+type ORAMClient struct {
 	capacity uint64
-	codec    codec.ValueCodec[V]
 	dataFile string
 }
 
 // New creates the ENIGMAP-specific Path ORAM node store configuration.
-func New[V any](
+func New(
 	capacity uint64,
-	valueCodec codec.ValueCodec[V],
 	dataFile string,
-) (*ORAMClient[V], error) {
+) (*ORAMClient, error) {
 	if capacity == 0 {
 		return nil, ErrInvalidCapacity
 	}
-	if valueCodec == nil {
-		return nil, ErrNilValueCodec
-	}
-	if valueCodec.Size() == 0 {
-		return nil, ErrInvalidValueSize
-	}
 
-	return &ORAMClient[V]{
+	return &ORAMClient{
 		capacity: capacity,
-		codec:    valueCodec,
 		dataFile: dataFile,
 	}, nil
 }
 
 // Default creates an eoram store using the default tmpfs data file.
-func Default[V any](
+func Default(
 	capacity uint64,
-	valueCodec codec.ValueCodec[V],
-) (*ORAMClient[V], error) {
-	return New(capacity, valueCodec, DefaultDataFile)
+) (*ORAMClient, error) {
+	return New(capacity, DefaultDataFile)
 }
+
+// Allocate reserves a logical ORAM address and stores node at that address.
+func (client *ORAMClient) Allocate(
+	node avl.Node[omap.Value],
+) (avl.NodeID, error) {
+	_ = newNodeBlock(node)
+	return avl.NullAddress, ErrNotImplemented
+}
+
+// Load reads one complete AVL node through Path ORAM.
+func (client *ORAMClient) Load(
+	id avl.NodeID,
+) (avl.Node[omap.Value], error) {
+	_ = id
+	return avl.Node[omap.Value]{}, ErrNotImplemented
+}
+
+// Update replaces one complete AVL node through Path ORAM.
+func (client *ORAMClient) Update(
+	id avl.NodeID,
+	node avl.Node[omap.Value],
+) error {
+	_, _ = id, newNodeBlock(node)
+	return ErrNotImplemented
+}
+
+// FreeMaybe releases id without making the physical access trace depend on
+// condition.
+func (client *ORAMClient) FreeMaybe(
+	id avl.NodeID,
+	condition int,
+) error {
+	_, _ = id, condition
+	return ErrNotImplemented
+}
+
+var _ avl.NodeStore[omap.Value] = (*ORAMClient)(nil)

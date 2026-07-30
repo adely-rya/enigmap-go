@@ -18,14 +18,13 @@ func NewMemory[V any](
 // The factory will be enabled after eoram.ORAMClient implements
 // avl.NodeStore[V].
 //
-// func NewORAM[V any](
+// func NewORAM(
 // 	capacity uint64,
-// 	valueCodec codec.ValueCodec[V],
-// ) (omap.Store[V], error) {
-// 	client, err := eoram.Default(capacity, valueCodec)
+// ) (omap.Store[omap.Value], error) {
+// 	client, err := eoram.Default(capacity)
 // 	if err != nil {
 // 		return nil, err
 // 	}
 //
-// 	return avl.NewTree[V](client, capacity)
+// 	return avl.NewTree[omap.Value](client, capacity)
 // }
