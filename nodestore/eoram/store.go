@@ -7,12 +7,12 @@ import (
 )
 
 var (
-	ErrInvalidMaxNodes      = errors.New("eoram: maxNodes must be positive")
-	ErrNilValueCodec        = errors.New("eoram: value codec is required")
-	ErrInvalidValueSize     = errors.New("eoram: value codec size must be positive")
-	ErrInvalidLevelsPerPack = errors.New("eoram: levels per pack must be positive")
-	ErrInvalidCacheCapacity = errors.New("eoram: cache capacity must be positive")
+	ErrInvalidMaxNodes  = errors.New("eoram: maxNodes must be positive")
+	ErrNilValueCodec    = errors.New("eoram: value codec is required")
+	ErrInvalidValueSize = errors.New("eoram: value codec size must be positive")
 )
+
+const DefaultDataFile = "/dev/shm/enigmap/oram-large-buckets.db"
 
 // Store is the ENIGMAP-specific AVL node store backed by Path ORAM.
 //
@@ -21,14 +21,14 @@ var (
 type Store[V any] struct {
 	maxNodes uint64
 	codec    codec.ValueCodec[V]
-	config   config
+	dataFile string
 }
 
 // New creates the ENIGMAP-specific Path ORAM node store configuration.
 func New[V any](
 	maxNodes uint64,
 	valueCodec codec.ValueCodec[V],
-	options ...Option,
+	dataFile string,
 ) (*Store[V], error) {
 	if maxNodes == 0 {
 		return nil, ErrInvalidMaxNodes
@@ -40,23 +40,17 @@ func New[V any](
 		return nil, ErrInvalidValueSize
 	}
 
-	config := defaultConfig()
-	for _, option := range options {
-		if option != nil {
-			option(&config)
-		}
-	}
-
-	if config.levelsPerPack == 0 {
-		return nil, ErrInvalidLevelsPerPack
-	}
-	if config.cacheCapacity <= 0 {
-		return nil, ErrInvalidCacheCapacity
-	}
-
 	return &Store[V]{
 		maxNodes: maxNodes,
 		codec:    valueCodec,
-		config:   config,
+		dataFile: dataFile,
 	}, nil
+}
+
+// Default creates an eoram store using the default tmpfs data file.
+func Default[V any](
+	maxNodes uint64,
+	valueCodec codec.ValueCodec[V],
+) (*Store[V], error) {
+	return New(maxNodes, valueCodec, DefaultDataFile)
 }
