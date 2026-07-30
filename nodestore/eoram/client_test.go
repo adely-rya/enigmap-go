@@ -27,8 +27,8 @@ func TestDefaultUsesDefaultDataFile(t *testing.T) {
 		t.Fatalf("Default() error = %v", err)
 	}
 
-	if store.maxNodes != 100 {
-		t.Fatalf("maxNodes = %d, want 100", store.maxNodes)
+	if store.capacity != 100 {
+		t.Fatalf("capacity = %d, want 100", store.capacity)
 	}
 	if store.dataFile != DefaultDataFile {
 		t.Fatalf("dataFile = %q, want %q", store.dataFile, DefaultDataFile)
@@ -53,11 +53,11 @@ func TestNewRejectsInvalidConfiguration(t *testing.T) {
 		wantErr error
 	}{
 		{
-			name: "zero max nodes",
+			name: "zero capacity",
 			new: func() (*ORAMClient[uint64], error) {
 				return New[uint64](0, testCodec{size: 8}, "/tmp/data.db")
 			},
-			wantErr: ErrInvalidMaxNodes,
+			wantErr: ErrInvalidCapacity,
 		},
 		{
 			name: "nil codec",
