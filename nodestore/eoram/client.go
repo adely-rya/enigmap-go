@@ -14,11 +14,11 @@ var (
 
 const DefaultDataFile = "/dev/shm/enigmap/oram-large-buckets.db"
 
-// Store is the ENIGMAP-specific AVL node store backed by Path ORAM.
+// ORAMClient is the ENIGMAP-specific AVL node store backed by Path ORAM.
 //
 // The constructor owns the stable configuration boundary. Path ORAM, Large
 // Bucket cache, encryption, and file storage are added behind this type.
-type Store[V any] struct {
+type ORAMClient[V any] struct {
 	maxNodes uint64
 	codec    codec.ValueCodec[V]
 	dataFile string
@@ -29,7 +29,7 @@ func New[V any](
 	maxNodes uint64,
 	valueCodec codec.ValueCodec[V],
 	dataFile string,
-) (*Store[V], error) {
+) (*ORAMClient[V], error) {
 	if maxNodes == 0 {
 		return nil, ErrInvalidMaxNodes
 	}
@@ -40,7 +40,7 @@ func New[V any](
 		return nil, ErrInvalidValueSize
 	}
 
-	return &Store[V]{
+	return &ORAMClient[V]{
 		maxNodes: maxNodes,
 		codec:    valueCodec,
 		dataFile: dataFile,
@@ -51,6 +51,6 @@ func New[V any](
 func Default[V any](
 	maxNodes uint64,
 	valueCodec codec.ValueCodec[V],
-) (*Store[V], error) {
+) (*ORAMClient[V], error) {
 	return New(maxNodes, valueCodec, DefaultDataFile)
 }

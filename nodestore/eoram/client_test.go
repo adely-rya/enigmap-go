@@ -49,26 +49,26 @@ func TestNewUsesDataFile(t *testing.T) {
 func TestNewRejectsInvalidConfiguration(t *testing.T) {
 	tests := []struct {
 		name    string
-		new     func() (*Store[uint64], error)
+		new     func() (*ORAMClient[uint64], error)
 		wantErr error
 	}{
 		{
 			name: "zero max nodes",
-			new: func() (*Store[uint64], error) {
+			new: func() (*ORAMClient[uint64], error) {
 				return New[uint64](0, testCodec{size: 8}, "/tmp/data.db")
 			},
 			wantErr: ErrInvalidMaxNodes,
 		},
 		{
 			name: "nil codec",
-			new: func() (*Store[uint64], error) {
+			new: func() (*ORAMClient[uint64], error) {
 				return New[uint64](100, nil, "/tmp/data.db")
 			},
 			wantErr: ErrNilValueCodec,
 		},
 		{
 			name: "zero value size",
-			new: func() (*Store[uint64], error) {
+			new: func() (*ORAMClient[uint64], error) {
 				return New[uint64](100, testCodec{}, "/tmp/data.db")
 			},
 			wantErr: ErrInvalidValueSize,
