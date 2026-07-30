@@ -48,7 +48,7 @@ func latencyData(prefix string, index int) latencyValue {
 //
 //	go test -tags latency -run TestMemoryStoreLatency -v
 func TestMemoryStoreLatency(t *testing.T) {
-	entryCounts := []int{10, 100, 1000, 10000}
+	entryCounts := []int{10, 100, 1000, 10000, 100000, 1000000}
 	results := make([]latencyResult, 0, len(entryCounts))
 
 	for _, entryCount := range entryCounts {
