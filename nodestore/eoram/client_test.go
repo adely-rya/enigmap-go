@@ -1,6 +1,9 @@
 package eoram
 
 import (
+	"bytes"
+	"errors"
+	"io"
 	"testing"
 
 	"github.com/adely-rya/oram/storage"
@@ -9,7 +12,10 @@ import (
 func TestNewOramClient(t *testing.T) {
 	store := storage.NewMemoryStorage[Bucket[selectableString]](7)
 
-	client := NewOramClient[selectableString](store, 3)
+	client, err := NewOramClient[selectableString](store, 3)
+	if err != nil {
+		t.Fatalf("NewOramClient: %v", err)
+	}
 
 	if client.server.Storage != store {
 		t.Fatal("client does not retain server storage")
@@ -28,7 +34,10 @@ func TestNewOramClient(t *testing.T) {
 func TestNewOramClientUsesDefaultBucketSize(t *testing.T) {
 	store := storage.NewMemoryStorage[Bucket[selectableString]](7)
 
-	client := NewOramClient[selectableString](store, 0)
+	client, err := NewOramClient[selectableString](store, 0)
+	if err != nil {
+		t.Fatalf("NewOramClient: %v", err)
+	}
 
 	if client.bucketSize != defaultBucketSize {
 		t.Fatalf(
@@ -41,18 +50,15 @@ func TestNewOramClientUsesDefaultBucketSize(t *testing.T) {
 
 func TestClientOperationStubsPanic(t *testing.T) {
 	store := storage.NewMemoryStorage[Bucket[selectableString]](7)
-	client := NewOramClient[selectableString](store, 5)
+	client, err := NewOramClient[selectableString](store, 5)
+	if err != nil {
+		t.Fatalf("NewOramClient: %v", err)
+	}
 
 	tests := []struct {
 		name string
 		call func()
 	}{
-		{
-			name: "NewPosition",
-			call: func() {
-				_, _ = client.NewPosition()
-			},
-		},
 		{
 			name: "BeginAccess",
 			call: func() {
@@ -95,5 +101,39 @@ func TestClientOperationStubsPanic(t *testing.T) {
 
 			test.call()
 		})
+	}
+}
+
+func TestClientNewPositionUsesServerLeafCount(t *testing.T) {
+	store := storage.NewMemoryStorage[Bucket[selectableString]](7)
+	client, err := NewOramClient[selectableString](store, 5)
+	if err != nil {
+		t.Fatalf("NewOramClient: %v", err)
+	}
+	client.random = bytes.NewReader([]byte{
+		0xff, 0xff, 0xff, 0xff,
+		0xff, 0xff, 0xff, 0xff,
+	})
+
+	position, err := client.NewPosition()
+	if err != nil {
+		t.Fatalf("NewPosition: %v", err)
+	}
+	if position != 3 {
+		t.Fatalf("position = %d, want 3", position)
+	}
+}
+
+func TestClientNewPositionPropagatesRandomError(t *testing.T) {
+	store := storage.NewMemoryStorage[Bucket[selectableString]](7)
+	client, err := NewOramClient[selectableString](store, 5)
+	if err != nil {
+		t.Fatalf("NewOramClient: %v", err)
+	}
+	client.random = bytes.NewReader(nil)
+
+	_, err = client.NewPosition()
+	if !errors.Is(err, io.EOF) {
+		t.Fatalf("NewPosition error = %v, want EOF", err)
 	}
 }

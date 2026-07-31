@@ -30,7 +30,10 @@ func NewORAM[T core.Selectable[T]](
 	maxNodes uint64,
 	bucketSize int,
 ) (omap.Store[T], error) {
-	client := eoram.NewOramClient(storage, bucketSize)
+	client, err := eoram.NewOramClient(storage, bucketSize)
+	if err != nil {
+		return nil, err
+	}
 
 	// nodeStore := eoram.NewStore(client)
 	// return avl.NewTree[T](nodeStore, maxNodes)

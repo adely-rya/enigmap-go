@@ -1,6 +1,9 @@
 package eoram
 
 import (
+	cryptoRand "crypto/rand"
+	"encoding/binary"
+	"io"
 	"math"
 
 	"github.com/adely-rya/oram/core"
@@ -32,6 +35,7 @@ type accessState struct {
 type Client[T core.Selectable[T]] struct {
 	server OramServer[Bucket[T], core.IO[Bucket[T]]]
 	stash  Stash[T]
+	random io.Reader
 
 	bucketSize    int
 	nextFreeBlock Address
@@ -42,9 +46,14 @@ type Client[T core.Selectable[T]] struct {
 func NewOramClient[T core.Selectable[T]](
 	storage core.IO[Bucket[T]],
 	bucketSize int,
-) *Client[T] {
+) (*Client[T], error) {
 	if bucketSize <= 0 {
 		bucketSize = defaultBucketSize
+	}
+
+	server, err := NewOramServer(storage)
+	if err != nil {
+		return nil, err
 	}
 
 	stashSize := int(math.Ceil(
@@ -53,18 +62,25 @@ func NewOramClient[T core.Selectable[T]](
 	))
 
 	return &Client[T]{
-		server:     NewOramServer(storage),
+		server:     server,
 		stash:      Stash[T]{blocks: make([]StashedBlock[T], stashSize)},
+		random:     cryptoRand.Reader,
 		bucketSize: bucketSize,
 		access: accessState{
 			phase: accessReady,
 		},
-	}
+	}, nil
 }
 
 // NewPosition generates a new leaf position for an ORAM block.
 func (client *Client[T]) NewPosition() (Position, error) {
-	panic("eoram: Client.NewPosition is not implemented")
+	var randomBytes [8]byte
+	if _, err := io.ReadFull(client.random, randomBytes[:]); err != nil {
+		return 0, err
+	}
+
+	randomValue := binary.LittleEndian.Uint64(randomBytes[:])
+	return Position(randomValue & (client.server.LeafCount() - 1)), nil
 }
 
 // BeginAccess reads the path at oldPosition into the stash and moves the
