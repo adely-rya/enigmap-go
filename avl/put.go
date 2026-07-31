@@ -15,22 +15,22 @@ const (
 
 type putMetadata struct {
 	// 新しいノードの接続先
-	insertionParentID NodeID //親のNodeID
-	insertionRight    int    //0ならLeft、1ならRightに挿入
+	insertionParentID Pointer //親のPointer
+	insertionRight    int     //0ならLeft、1ならRightに挿入
 
 	// 既存キーの更新先
 	keyExists      int
-	existingNodeID NodeID
+	existingNodeID Pointer
 
 	// balance更新・回転の基準
-	pivotID              NodeID
+	pivotID              Pointer
 	pivotBalance         Balance
-	pivotParentID        NodeID
-	pivotChildID         NodeID
-	pivotChildOppositeID NodeID
-	pivotGrandchildID    NodeID
-	grandchildLeftID     NodeID
-	grandchildRightID    NodeID
+	pivotParentID        Pointer
+	pivotChildID         Pointer
+	pivotChildOppositeID Pointer
+	pivotGrandchildID    Pointer
+	grandchildLeftID     Pointer
+	grandchildRightID    Pointer
 	pivotDirection       int
 	childDirection       int
 	grandchildDirection  int
@@ -83,10 +83,11 @@ func directionForRealNode(right, valid int) int {
 	return conditionsBoth(right, valid)
 }
 
-// currentIsStoredNode は、現在IDが保存済みIDと一致し、そのIDが存在するときに1を返す。
+// currentIsStoredNode は、現在pointerと保存済みpointerのaddressが一致し、
+// 保存済みnodeが存在するときに1を返す。
 // NullAddress同士の一致を、pivot・child・grandchildの一致と誤認しないために使う。
-func currentIsStoredNode(currentID, storedID NodeID, storedNodeExists int) int {
-	return conditionsBoth(nodeIDsEqual(currentID, storedID), storedNodeExists)
+func currentIsStoredNode(current, stored Pointer, storedNodeExists int) int {
+	return conditionsBoth(pointerAddressesEqual(current, stored), storedNodeExists)
 }
 
 // isPivotCandidate は、現在のノードが実ノードかつ非Balancedなら1を返す。
@@ -187,8 +188,8 @@ func shouldApplyDirection(atRotationNode, direction int) int {
 
 // isInsertedGrandchild は、二重回転のpivot grandchildが今回のcandidate自身なら1を返す。
 // candidate自身なら左右に既存部分木がなく、pivotとpivot childは両方Balancedになる。
-func isInsertedGrandchild(pivotGrandchildID, candidateID NodeID, newInsertion int) int {
-	return conditionsBoth(nodeIDsEqual(pivotGrandchildID, candidateID), newInsertion)
+func isInsertedGrandchild(pivotGrandchild, candidate Pointer, newInsertion int) int {
+	return conditionsBoth(pointerAddressesEqual(pivotGrandchild, candidate), newInsertion)
 }
 
 // shouldTiltPivotOpposite は、二重回転後のpivotを挿入方向と逆へ傾ける場合に1を返す。
@@ -243,17 +244,18 @@ func (t *Tree[V]) Put(key []byte, value V) error {
 	if err != nil {
 		return err
 	}
+	candidatePointer := Pointer{Address: candidateID}
 
 	metadata := putMetadata{
 		rotation: rotationNone,
 	}
 
 	currentID := t.root
-	parentID := NullAddress
+	parentID := Pointer{}
 	insertionPointFound := 0 //挿入ポイント判定
 
 	for depth := 0; depth < t.maxDepth; depth++ {
-		node, err := t.store.Load(currentID)
+		node, err := t.store.Load(currentID.Address)
 		if err != nil {
 			return err
 		}
@@ -266,7 +268,7 @@ func (t *Tree[V]) Put(key []byte, value V) error {
 		match := matchingRealNode(equal, valid)    // 実ノードでkeyが一致するなら1
 		right = directionForRealNode(right, valid) // fakeならLeft、実ノードなら比較結果の方向
 
-		metadata.existingNodeID = selectNodeID(
+		metadata.existingNodeID = selectPointer(
 			metadata.existingNodeID,
 			currentID,
 			match,
@@ -274,9 +276,9 @@ func (t *Tree[V]) Put(key []byte, value V) error {
 		metadata.keyExists = rememberCondition(metadata.keyExists, match) // 一度一致したら1を保持
 		node.Value = selectValue(node.Value, value, match)                // if match == 1 { valueを上書き }; 既存キーを更新
 
-		next := selectNodeID(node.Left, node.Right, right)
+		next := selectPointer(node.Left, node.Right, right)
 
-		pivotExists := isNotNullAddress(metadata.pivotID)
+		pivotExists := isNotNullPointer(metadata.pivotID)
 		currentIsPivotChild := currentIsStoredNode(
 			currentID,
 			metadata.pivotChildID,
@@ -287,34 +289,34 @@ func (t *Tree[V]) Put(key []byte, value V) error {
 			right,
 			currentIsPivotChild,
 		)
-		oppositeChild := selectNodeID(
+		oppositeChild := selectPointer(
 			node.Right,
 			node.Left,
 			right,
 		) // if Leftへ進む { Right child } else { Left child }; 挿入経路の反対側の子要素も取得（回転走査で必要）
-		metadata.pivotChildOppositeID = selectNodeID(
+		metadata.pivotChildOppositeID = selectPointer(
 			metadata.pivotChildOppositeID,
 			oppositeChild,
 			currentIsPivotChild,
 		)
-		metadata.pivotGrandchildID = selectNodeID(
+		metadata.pivotGrandchildID = selectPointer(
 			metadata.pivotGrandchildID,
 			next,
 			currentIsPivotChild,
 		) //pivot childの子を二重回転のために取得
 
-		grandchildExists := isNotNullAddress(metadata.pivotGrandchildID) //孫がいるか
+		grandchildExists := isNotNullPointer(metadata.pivotGrandchildID) //孫がいるか
 		currentIsPivotGrandchild := currentIsStoredNode(
 			currentID,
 			metadata.pivotGrandchildID,
 			grandchildExists,
 		) // 保存済みのpivot grandchild上なら1
-		metadata.grandchildLeftID = selectNodeID(
+		metadata.grandchildLeftID = selectPointer(
 			metadata.grandchildLeftID,
 			node.Left,
 			currentIsPivotGrandchild,
 		) //孫のLeftノード取得
-		metadata.grandchildRightID = selectNodeID(
+		metadata.grandchildRightID = selectPointer(
 			metadata.grandchildRightID,
 			node.Right,
 			currentIsPivotGrandchild,
@@ -330,17 +332,17 @@ func (t *Tree[V]) Put(key []byte, value V) error {
 			byte(BalanceBalanced),
 		) //balanced(左右の高さが同じ)なら1 非balancedなら0
 		pivotCandidate := isPivotCandidate(valid, balanced) // 実ノードかつ非Balancedなら1
-		metadata.pivotID = selectNodeID(
+		metadata.pivotID = selectPointer(
 			metadata.pivotID,
 			currentID,
 			pivotCandidate,
 		) //node.Valid == 1 && node.Balance != BalanceBalanced なら回転の可能性があるので今のブロックを保存
-		metadata.pivotParentID = selectNodeID(
+		metadata.pivotParentID = selectPointer(
 			metadata.pivotParentID,
 			parentID,
 			pivotCandidate,
 		) //node.Valid == 1 && node.Balance != BalanceBalanced なら回転の可能性があるので今の親ブロックを保存
-		metadata.pivotChildID = selectNodeID(
+		metadata.pivotChildID = selectPointer(
 			metadata.pivotChildID,
 			next,
 			pivotCandidate,
@@ -355,14 +357,14 @@ func (t *Tree[V]) Put(key []byte, value V) error {
 			node.Balance,
 			pivotCandidate,
 		) //node.Valid == 1 && node.Balance != BalanceBalanced なら元のbalanceを保存
-		metadata.pivotGrandchildID = selectNodeID(
+		metadata.pivotGrandchildID = selectPointer(
 			metadata.pivotGrandchildID,
-			NullAddress,
+			Pointer{},
 			pivotCandidate,
 		) //新たなpivot発見時に保存していたgrandchildの情報を無効化
 
-		nextIsFake := nodeIDsEqual(next, t.fake)         // if next == fake { 1 } else { 0 }; 次がfakeなら1
-		currentIsFake := nodeIDsEqual(currentID, t.fake) // if current == fake { 1 } else { 0 }; 現在がfakeなら1
+		nextIsFake := pointerAddressesEqual(next, t.fake)         // if next == fake { 1 } else { 0 }; 次がfakeなら1
+		currentIsFake := pointerAddressesEqual(currentID, t.fake) // if current == fake { 1 } else { 0 }; 現在がfakeなら1
 		foundInsertionPoint := isFirstInsertionPoint(
 			nextIsFake,
 			currentIsFake,
@@ -370,7 +372,7 @@ func (t *Tree[V]) Put(key []byte, value V) error {
 			insertionPointFound,
 		) // 既存keyではなく、最初に見つけた実ノードの空きchildなら1
 
-		metadata.insertionParentID = selectNodeID( //挿入する場所の親を保存
+		metadata.insertionParentID = selectPointer( //挿入する場所の親を保存
 			metadata.insertionParentID,
 			currentID,
 			foundInsertionPoint,
@@ -384,17 +386,17 @@ func (t *Tree[V]) Put(key []byte, value V) error {
 			currentIsPivotChild,
 			foundInsertionPoint,
 		)
-		metadata.pivotGrandchildID = selectNodeID(
+		metadata.pivotGrandchildID = selectPointer(
 			metadata.pivotGrandchildID,
-			candidateID,
+			candidatePointer,
 			candidateIsPivotGrandchild,
 		)
-		metadata.grandchildLeftID = selectNodeID(
+		metadata.grandchildLeftID = selectPointer(
 			metadata.grandchildLeftID,
 			t.fake,
 			candidateIsPivotGrandchild,
 		)
-		metadata.grandchildRightID = selectNodeID(
+		metadata.grandchildRightID = selectPointer(
 			metadata.grandchildRightID,
 			t.fake,
 			candidateIsPivotGrandchild,
@@ -403,23 +405,23 @@ func (t *Tree[V]) Put(key []byte, value V) error {
 
 		insertLeft := shouldInsertLeft(foundInsertionPoint, right)
 		insertRight := shouldInsertRight(foundInsertionPoint, right)
-		node.Left = selectNodeID(node.Left, candidateID, insertLeft)
-		node.Right = selectNodeID(node.Right, candidateID, insertRight) //左右両方への処理をすることで実行時間の左右差を無くしている。
+		node.Left = selectPointer(node.Left, candidatePointer, insertLeft)
+		node.Right = selectPointer(node.Right, candidatePointer, insertRight) //左右両方への処理をすることで実行時間の左右差を無くしている。
 
-		if err := t.store.Update(currentID, node); err != nil {
+		if err := t.store.Update(currentID.Address, node); err != nil {
 			return err
 		}
 
-		parentID = selectNodeID(
+		parentID = selectPointer(
 			parentID,
 			currentID,
 			conditionNot(currentIsFake),
 		) // currentが実ノードなら、次の走査で使う親として保持
-		currentID = selectNodeID(t.fake, next, isNotNullAddress(next))
+		currentID = selectPointer(t.fake, next, isNotNullPointer(next))
 	}
 
 	//操作種別の判定
-	pivotExists := isNotNullAddress(metadata.pivotID)
+	pivotExists := isNotNullPointer(metadata.pivotID)
 	shouldRebalance := shouldClassifyRebalance(
 		pivotExists,
 		metadata.keyExists,
@@ -485,7 +487,7 @@ func (t *Tree[V]) Put(key []byte, value V) error {
 	rebalanceActive := shouldStartPathBalance(newInsertion, rotationIsNone)
 
 	for depth := 0; depth < t.maxDepth; depth++ {
-		node, err := t.store.Load(currentID)
+		node, err := t.store.Load(currentID.Address)
 		if err != nil {
 			return err
 		}
@@ -494,7 +496,7 @@ func (t *Tree[V]) Put(key []byte, value V) error {
 		right := subtle.ConstantTimeEq(int32(comparison), 1) // if key > node.Key { 1 } else { 0 }; 右へ進むなら1
 		valid := subtle.ConstantTimeByteEq(node.Valid, 1)    // if node is real { 1 } else { 0 }; 実ノードなら1
 		right = directionForRealNode(right, valid)           // fakeならLeft、実ノードなら比較結果の方向
-		next := selectNodeID(node.Left, node.Right, right)   // 回転などの更新走査をする前に次のアクセス先を明らかに
+		next := selectPointer(node.Left, node.Right, right)  // 回転などの更新走査をする前に次のアクセス先を明らかに
 
 		atPivot := currentIsStoredNode(currentID, metadata.pivotID, pivotExists)
 		atPivotParent := currentIsStoredNode(currentID, metadata.pivotParentID, pivotExists)
@@ -504,7 +506,7 @@ func (t *Tree[V]) Put(key []byte, value V) error {
 			metadata.pivotGrandchildID,
 			pivotExists,
 		)
-		atCandidate := currentIsStoredNode(currentID, candidateID, newInsertion)
+		atCandidate := currentIsStoredNode(currentID, candidatePointer, newInsertion)
 
 		directRotation := rotationTypesEqual(
 			metadata.rotation,
@@ -623,14 +625,14 @@ func (t *Tree[V]) Put(key []byte, value V) error {
 			pivotChild.Leftのmiddleをpivot.Rightへ移す。
 			candidateはinsertionSubtreeのroot、またはその内部にある。
 		*/
-		parentLeftIsPivot := nodeIDsEqual(node.Left, metadata.pivotID)   // 親の左がpivotなら1
-		parentRightIsPivot := nodeIDsEqual(node.Right, metadata.pivotID) // 親の右がpivotなら1
-		node.Left = selectNodeID(
+		parentLeftIsPivot := pointerAddressesEqual(node.Left, metadata.pivotID)   // 親の左がpivotなら1
+		parentRightIsPivot := pointerAddressesEqual(node.Right, metadata.pivotID) // 親の右がpivotなら1
+		node.Left = selectPointer(
 			node.Left,
 			metadata.pivotChildID,
 			shouldReplaceParentLink(twoAtPivotParent, parentLeftIsPivot),
 		) //親のノードの子ノードアドレスを変更
-		node.Right = selectNodeID(
+		node.Right = selectPointer(
 			node.Right,
 			metadata.pivotChildID,
 			shouldReplaceParentLink(twoAtPivotParent, parentRightIsPivot),
@@ -640,12 +642,12 @@ func (t *Tree[V]) Put(key []byte, value V) error {
 		pivotTurnsLeft := metadata.pivotDirection                // RRの左回転なら1
 
 		//以下 pivotの子ノードアドレス更新
-		node.Left = selectNodeID(
+		node.Left = selectPointer(
 			node.Left,
 			metadata.pivotChildOppositeID,
 			shouldApplyDirection(twoAtPivot, pivotTurnsRight),
 		)
-		node.Right = selectNodeID(
+		node.Right = selectPointer(
 			node.Right,
 			metadata.pivotChildOppositeID,
 			shouldApplyDirection(twoAtPivot, pivotTurnsLeft),
@@ -657,12 +659,12 @@ func (t *Tree[V]) Put(key []byte, value V) error {
 		)
 
 		//以下 pivot childの子ノードアドレス更新
-		node.Left = selectNodeID(
+		node.Left = selectPointer(
 			node.Left,
 			metadata.pivotID,
 			shouldApplyDirection(twoAtPivotChild, pivotTurnsLeft),
 		)
-		node.Right = selectNodeID(
+		node.Right = selectPointer(
 			node.Right,
 			metadata.pivotID,
 			shouldApplyDirection(twoAtPivotChild, pivotTurnsRight),
@@ -695,22 +697,22 @@ func (t *Tree[V]) Put(key []byte, value V) error {
 			     /                            \              /
 			pivotGrandchild              grandchildLeft grandchildRight
 		*/
-		parentLeftIsPivot = nodeIDsEqual(node.Left, metadata.pivotID)
-		parentRightIsPivot = nodeIDsEqual(node.Right, metadata.pivotID)
+		parentLeftIsPivot = pointerAddressesEqual(node.Left, metadata.pivotID)
+		parentRightIsPivot = pointerAddressesEqual(node.Right, metadata.pivotID)
 		//parentの子はpivotからpivot childへ
-		node.Left = selectNodeID(
+		node.Left = selectPointer(
 			node.Left,
 			metadata.pivotGrandchildID,
 			shouldReplaceParentLink(threeAtPivotParent, parentLeftIsPivot),
 		)
-		node.Right = selectNodeID(
+		node.Right = selectPointer(
 			node.Right,
 			metadata.pivotGrandchildID,
 			shouldReplaceParentLink(threeAtPivotParent, parentRightIsPivot),
 		)
 
 		//pivotのこはgrandchildに
-		node.Left = selectNodeID(
+		node.Left = selectPointer(
 			node.Left,
 			metadata.grandchildRightID,
 			shouldApplyDirection(
@@ -718,19 +720,19 @@ func (t *Tree[V]) Put(key []byte, value V) error {
 				conditionNot(metadata.pivotDirection),
 			),
 		) //LR
-		node.Right = selectNodeID(
+		node.Right = selectPointer(
 			node.Right,
 			metadata.grandchildLeftID,
 			shouldApplyDirection(threeAtPivot, metadata.pivotDirection),
 		) //RL
 
 		//pivotchildの子もgrandchildへ
-		node.Left = selectNodeID(
+		node.Left = selectPointer(
 			node.Left,
 			metadata.grandchildRightID,
 			shouldApplyDirection(threeAtPivotChild, metadata.pivotDirection),
 		)
-		node.Right = selectNodeID(
+		node.Right = selectPointer(
 			node.Right,
 			metadata.grandchildLeftID,
 			shouldApplyDirection(
@@ -740,7 +742,7 @@ func (t *Tree[V]) Put(key []byte, value V) error {
 		)
 
 		//pivot grandchildの子はpivotとpivot childに
-		node.Left = selectNodeID(
+		node.Left = selectPointer(
 			node.Left,
 			metadata.pivotChildID,
 			shouldApplyDirection(
@@ -748,12 +750,12 @@ func (t *Tree[V]) Put(key []byte, value V) error {
 				conditionNot(metadata.pivotDirection),
 			),
 		)
-		node.Left = selectNodeID(
+		node.Left = selectPointer(
 			node.Left,
 			metadata.pivotID,
 			shouldApplyDirection(threeAtPivotGrandchild, metadata.pivotDirection),
 		)
-		node.Right = selectNodeID(
+		node.Right = selectPointer(
 			node.Right,
 			metadata.pivotID,
 			shouldApplyDirection(
@@ -761,7 +763,7 @@ func (t *Tree[V]) Put(key []byte, value V) error {
 				conditionNot(metadata.pivotDirection),
 			),
 		)
-		node.Right = selectNodeID(
+		node.Right = selectPointer(
 			node.Right,
 			metadata.pivotChildID,
 			shouldApplyDirection(threeAtPivotGrandchild, metadata.pivotDirection),
@@ -770,7 +772,7 @@ func (t *Tree[V]) Put(key []byte, value V) error {
 		//grandchildがcadinateか判定
 		grandchildIsCandidate := isInsertedGrandchild(
 			metadata.pivotGrandchildID,
-			candidateID,
+			candidatePointer,
 			newInsertion,
 		)
 
@@ -833,11 +835,11 @@ func (t *Tree[V]) Put(key []byte, value V) error {
 			atCandidate,
 		) // if candidate { active = 0 }; 挿入位置で終了
 
-		if err := t.store.Update(currentID, node); err != nil {
+		if err := t.store.Update(currentID.Address, node); err != nil {
 			return err
 		}
 
-		currentID = selectNodeID(t.fake, next, isNotNullAddress(next))
+		currentID = selectPointer(t.fake, next, isNotNullPointer(next))
 	}
 
 	return err

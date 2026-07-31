@@ -10,7 +10,7 @@ func (t *Tree[V]) Get(key []byte) (V, bool, error) {
 	var result V
 
 	for depth := 0; depth < t.maxDepth; depth++ {
-		node, err := t.store.Load(current)
+		node, err := t.store.Load(current.Address)
 		if err != nil {
 			var zero V
 			return zero, false, err
@@ -26,11 +26,11 @@ func (t *Tree[V]) Get(key []byte) (V, bool, error) {
 		result = selectValue(result, node.Value, match)
 		found |= match // if match == 1 { found = 1 }; 一度一致したら1
 
-		next := selectNodeID(node.Left, node.Right, right)
-		current = selectNodeID(
+		next := selectPointer(node.Left, node.Right, right)
+		current = selectPointer(
 			t.fake,
 			next,
-			isNotNullAddress(next),
+			isNotNullPointer(next),
 		)
 	}
 

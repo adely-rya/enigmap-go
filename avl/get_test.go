@@ -8,7 +8,7 @@ func getTestKey(first byte) []byte {
 	return key
 }
 
-func getTestNode(first byte, value string, fake NodeID) Node[string] {
+func getTestNode(first byte, value string, fake Pointer) Node[string] {
 	return Node[string]{
 		Key:   NewKey(getTestKey(first)),
 		Value: value,
@@ -35,10 +35,10 @@ func TestGetAlwaysLoadsMaxDepth(t *testing.T) {
 			t.Fatal("Get() found key in empty tree")
 		}
 		assertFixedLoads(t, store.loadIDs, tree.maxDepth)
-		if store.loadIDs[0] != tree.root {
-			t.Fatalf("first Load() = %d, want root sentinel %d", store.loadIDs[0], tree.root)
+		if store.loadIDs[0] != tree.root.Address {
+			t.Fatalf("first Load() = %d, want root sentinel %d", store.loadIDs[0], tree.root.Address)
 		}
-		assertLoadsFrom(t, store.loadIDs, 1, tree.fake)
+		assertLoadsFrom(t, store.loadIDs, 1, tree.fake.Address)
 	})
 
 	t.Run("found at root", func(t *testing.T) {
@@ -63,15 +63,15 @@ func TestGetAlwaysLoadsMaxDepth(t *testing.T) {
 			t.Fatalf("Get() = (%q, %v), want (%q, true)", value, found, "root")
 		}
 		assertFixedLoads(t, store.loadIDs, tree.maxDepth)
-		if store.loadIDs[0] != tree.root || store.loadIDs[1] != root {
+		if store.loadIDs[0] != tree.root.Address || store.loadIDs[1] != root {
 			t.Fatalf(
 				"first Loads = %v, want [%d %d]",
 				store.loadIDs[:2],
-				tree.root,
+				tree.root.Address,
 				root,
 			)
 		}
-		assertLoadsFrom(t, store.loadIDs, 2, tree.fake)
+		assertLoadsFrom(t, store.loadIDs, 2, tree.fake.Address)
 	})
 
 	t.Run("found below root", func(t *testing.T) {
@@ -86,7 +86,7 @@ func TestGetAlwaysLoadsMaxDepth(t *testing.T) {
 			t.Fatalf("allocate left: %v", err)
 		}
 		rootNode := getTestNode(0x20, "root", tree.fake)
-		rootNode.Left = left
+		rootNode.Left = Pointer{Address: left}
 		root, err := store.Allocate(rootNode)
 		if err != nil {
 			t.Fatalf("allocate root: %v", err)
@@ -102,18 +102,18 @@ func TestGetAlwaysLoadsMaxDepth(t *testing.T) {
 			t.Fatalf("Get() = (%q, %v), want (%q, true)", value, found, "left")
 		}
 		assertFixedLoads(t, store.loadIDs, tree.maxDepth)
-		if store.loadIDs[0] != tree.root ||
+		if store.loadIDs[0] != tree.root.Address ||
 			store.loadIDs[1] != root ||
 			store.loadIDs[2] != left {
 			t.Fatalf(
 				"first Loads = %v, want [%d %d %d]",
 				store.loadIDs[:3],
-				tree.root,
+				tree.root.Address,
 				root,
 				left,
 			)
 		}
-		assertLoadsFrom(t, store.loadIDs, 3, tree.fake)
+		assertLoadsFrom(t, store.loadIDs, 3, tree.fake.Address)
 	})
 
 	t.Run("missing", func(t *testing.T) {
@@ -138,15 +138,15 @@ func TestGetAlwaysLoadsMaxDepth(t *testing.T) {
 			t.Fatal("Get() found missing key")
 		}
 		assertFixedLoads(t, store.loadIDs, tree.maxDepth)
-		if store.loadIDs[0] != tree.root || store.loadIDs[1] != root {
+		if store.loadIDs[0] != tree.root.Address || store.loadIDs[1] != root {
 			t.Fatalf(
 				"first Loads = %v, want [%d %d]",
 				store.loadIDs[:2],
-				tree.root,
+				tree.root.Address,
 				root,
 			)
 		}
-		assertLoadsFrom(t, store.loadIDs, 2, tree.fake)
+		assertLoadsFrom(t, store.loadIDs, 2, tree.fake.Address)
 	})
 }
 
@@ -157,12 +157,12 @@ func setTestRoot(
 	root NodeID,
 ) {
 	t.Helper()
-	sentinel, err := store.Load(tree.root)
+	sentinel, err := store.Load(tree.root.Address)
 	if err != nil {
 		t.Fatalf("load root sentinel: %v", err)
 	}
-	sentinel.Left = root
-	if err := store.Update(tree.root, sentinel); err != nil {
+	sentinel.Left = Pointer{Address: root}
+	if err := store.Update(tree.root.Address, sentinel); err != nil {
 		t.Fatalf("update root sentinel: %v", err)
 	}
 }

@@ -78,16 +78,16 @@ func TestNewTreeCreatesFakeNodeAndRootSentinel(t *testing.T) {
 		t.Fatalf("NewTree(): %v", err)
 	}
 
-	if tree.fake != 7 {
-		t.Fatalf("fake node ID = %d, want 7", tree.fake)
+	if tree.fake != (Pointer{Address: 7}) {
+		t.Fatalf("fake node pointer = %v, want address 7", tree.fake)
 	}
-	fake, err := store.Load(tree.fake)
+	fake, err := store.Load(tree.fake.Address)
 	if err != nil {
 		t.Fatalf("load fake node: %v", err)
 	}
 	if fake.Left != tree.fake || fake.Right != tree.fake {
 		t.Fatalf(
-			"fake children = (%d, %d), want (%d, %d)",
+			"fake children = (%v, %v), want (%v, %v)",
 			fake.Left,
 			fake.Right,
 			tree.fake,
@@ -101,16 +101,16 @@ func TestNewTreeCreatesFakeNodeAndRootSentinel(t *testing.T) {
 		t.Fatalf("fake Balance = %d, want %d", fake.Balance, BalanceBalanced)
 	}
 
-	if tree.root != 8 {
-		t.Fatalf("root sentinel ID = %d, want 8", tree.root)
+	if tree.root != (Pointer{Address: 8}) {
+		t.Fatalf("root sentinel pointer = %v, want address 8", tree.root)
 	}
-	root, err := store.Load(tree.root)
+	root, err := store.Load(tree.root.Address)
 	if err != nil {
 		t.Fatalf("load root sentinel: %v", err)
 	}
 	if root.Left != tree.fake || root.Right != tree.fake {
 		t.Fatalf(
-			"root sentinel children = (%d, %d), want (%d, %d)",
+			"root sentinel children = (%v, %v), want (%v, %v)",
 			root.Left,
 			root.Right,
 			tree.fake,
