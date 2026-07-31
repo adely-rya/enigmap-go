@@ -16,7 +16,8 @@ type StashedBlock[T core.Selectable[T]] struct {
 // Stash holds blocks that have been read from ORAM paths but have not yet been
 // written back.
 type Stash[T core.Selectable[T]] struct {
-	blocks []StashedBlock[T]
+	blocks   []StashedBlock[T]
+	capacity int
 }
 
 func (block Block[T]) MakeStashedBlock(sticky int) StashedBlock[T] {
@@ -27,6 +28,9 @@ func (block Block[T]) MakeStashedBlock(sticky int) StashedBlock[T] {
 }
 
 func (stash *Stash[T]) Put(block Block[T]) int {
+	if block.Valid == 0 {
+		return 1
+	}
 	exists := 0
 
 	//同じブロックがスタッシュにあるかの判定
@@ -40,7 +44,6 @@ func (stash *Stash[T]) Put(block Block[T]) int {
 			)
 	}
 
-	inserted := 0
 	written := exists
 	for index := 0; index < len(stash.blocks); index++ {
 		current := stash.blocks[index]
@@ -50,26 +53,19 @@ func (stash *Stash[T]) Put(block Block[T]) int {
 			uint64(block.BlockAddress),
 		) //同じアドレスでエントリーがリアルか判定
 		update := exists & match
-		free := utils.CtNot(current.Block.Valid)
-		take := block.Valid &
-			utils.CtNot(exists) &
-			utils.CtNot(inserted) &
-			free
-
-		write := update | take
-		current.Block = current.Block.Select(block, write)
-		current.Sticky = subtle.ConstantTimeSelect(
-			take,
-			0,
-			current.Sticky,
-		)
+		current.Block = current.Block.Select(block, update)
 		stash.blocks[index] = current
-
-		inserted |= take
-		written |= write
+		written |= update
 	}
 
-	return utils.CtNot(block.Valid) | written
+	if exists == 0 {
+		if stash.capacity > 0 && len(stash.blocks) >= stash.capacity {
+			return 0
+		}
+		stash.blocks = append(stash.blocks, block.MakeStashedBlock(0))
+		written = 1
+	}
+	return written
 }
 
 // PutPinned adds a block to the stash and pins it against eviction.
@@ -230,19 +226,25 @@ func (stash *Stash[T]) FreeMaybe(
 }
 
 func (stash *Stash[T]) AddPath(path []Bucket[T], bucketSize int) int {
-	ok := 1
-
 	for depth := 0; depth < len(path); depth++ {
 		if len(path[depth]) != bucketSize {
 			return 0
 		}
-
-		for slot := 0; slot < bucketSize; slot++ {
-			ok = stash.Put(path[depth][slot]) & ok
-		}
+	}
+	required := len(path) * bucketSize
+	if stash.capacity > 0 && len(stash.blocks)+required > stash.capacity {
+		return 0
 	}
 
-	return ok
+	for depth := 0; depth < len(path); depth++ {
+		for slot := 0; slot < bucketSize; slot++ {
+			stash.blocks = append(
+				stash.blocks,
+				path[depth][slot].MakeStashedBlock(0),
+			)
+		}
+	}
+	return 1
 }
 
 // EvictToPath greedily fills a root-to-leaf path from the deepest bucket.
@@ -303,6 +305,23 @@ func (stash *Stash[T]) EvictToPath(
 			stash.blocks[index] = current
 		}
 	}
+	stash.compact()
 
 	return path
+}
+
+func (stash *Stash[T]) compact() {
+	write := 0
+	for read := 0; read < len(stash.blocks); read++ {
+		if stash.blocks[read].Block.Valid == 0 {
+			continue
+		}
+		stash.blocks[write] = stash.blocks[read]
+		write++
+	}
+	var zero StashedBlock[T]
+	for index := write; index < len(stash.blocks); index++ {
+		stash.blocks[index] = zero
+	}
+	stash.blocks = stash.blocks[:write]
 }

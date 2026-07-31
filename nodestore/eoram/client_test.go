@@ -25,8 +25,8 @@ func TestNewOramClient(t *testing.T) {
 	if client.bucketSize != 3 {
 		t.Fatalf("bucket size = %d, want 3", client.bucketSize)
 	}
-	if len(client.stash.blocks) == 0 {
-		t.Fatal("stash is not initialized")
+	if client.stash.capacity == 0 || len(client.stash.blocks) != 0 {
+		t.Fatalf("dynamic stash = (len=%d, capacity=%d), want empty with positive capacity", len(client.stash.blocks), client.stash.capacity)
 	}
 	if client.access.phase != accessReady {
 		t.Fatalf("access phase = %d, want ready", client.access.phase)
@@ -56,10 +56,11 @@ func TestClientUncacheAllUnpinsEveryStashEntry(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewOramClient: %v", err)
 	}
-	client.stash.blocks[0].Sticky = 1
-	client.stash.blocks[1].Sticky = 1
-	client.stash.blocks[0].Block.Data.Node.Valid = 1
-	client.stash.blocks[1].Block.Data.Node.Valid = 1
+	client.stash.blocks = append(
+		client.stash.blocks,
+		Block[NodeBlock[selectableString]]{Valid: 1}.MakeStashedBlock(1),
+		Block[NodeBlock[selectableString]]{Valid: 1}.MakeStashedBlock(1),
+	)
 
 	client.UncacheAll()
 
@@ -120,14 +121,14 @@ func TestClientFreeMaybe(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewOramClient: %v", err)
 	}
-	client.stash.blocks[0] = Block[NodeBlock[selectableString]]{
+	client.stash.blocks = append(client.stash.blocks, Block[NodeBlock[selectableString]]{
 		BlockAddress: 9,
 		Leaf:         2,
 		Data: NodeBlock[selectableString]{
 			Node: avl.Node[selectableString]{Value: "candidate", Valid: 1},
 		},
 		Valid: 1,
-	}.MakeStashedBlock(1)
+	}.MakeStashedBlock(1))
 
 	if err := client.FreeMaybe(avl.Pointer{Address: 9}, 0); err != nil {
 		t.Fatalf("FreeMaybe(condition=0): %v", err)

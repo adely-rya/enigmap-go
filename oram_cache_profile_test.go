@@ -43,8 +43,9 @@ func TestORAMCacheProfile(t *testing.T) {
 				client.PrepareAccessTime + client.UpdateBlockTime +
 				client.EvictToPathTime + client.WritePathTime + client.UnpinTime
 			fmt.Fprintf(os.Stdout,
-				"\ncapacity=%d Put=%s (%s/op) accesses=%d hits=%d misses=%d hit-rate=%.1f%% reads=%d writes=%d dirty-evictions=%d\n",
+				"\ncapacity=%d Put=%s (%s/op) accesses=%d max-stash=%d hits=%d misses=%d hit-rate=%.1f%% reads=%d writes=%d dirty-evictions=%d\n",
 				capacity, elapsed, elapsed/oramLatencyEntryCount, client.Accesses,
+				client.MaxStashLength,
 				cache.Hits, cache.Misses, percent(cache.Hits, cache.Hits+cache.Misses),
 				cache.BackingReads, cache.BackingWrites, cache.DirtyEvictions,
 			)

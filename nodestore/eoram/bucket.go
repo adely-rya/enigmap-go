@@ -14,7 +14,7 @@ const (
 	// KeyValueSize is the fixed serialized size of an AVL key and value.
 	// Change this constant to tune the ORAM payload size. ValueSize is derived
 	// from it so callers do not need to duplicate the value length.
-	KeyValueSize = 150
+	KeyValueSize = 34
 	ValueSize    = KeyValueSize - avl.KeySize
 
 	// balance (1), two child addresses (16), two child leaves (16), valid (1).

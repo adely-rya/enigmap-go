@@ -45,7 +45,7 @@ func TestBlockMakeStashedBlockNormalizesSticky(t *testing.T) {
 
 func TestStashAddPath(t *testing.T) {
 	stash := Stash[selectableString]{
-		blocks: make([]StashedBlock[selectableString], 4),
+		capacity: 4,
 	}
 	path := []Bucket[selectableString]{
 		{
@@ -87,7 +87,7 @@ func TestStashAddPath(t *testing.T) {
 
 func TestStashAddPathReportsOverflow(t *testing.T) {
 	stash := Stash[selectableString]{
-		blocks: make([]StashedBlock[selectableString], 1),
+		capacity: 1,
 	}
 	path := []Bucket[selectableString]{
 		{
@@ -102,9 +102,7 @@ func TestStashAddPathReportsOverflow(t *testing.T) {
 }
 
 func TestStashAddPathRejectsBucketSizeMismatch(t *testing.T) {
-	stash := Stash[selectableString]{
-		blocks: make([]StashedBlock[selectableString], 2),
-	}
+	stash := Stash[selectableString]{capacity: 2}
 
 	if got := stash.AddPath([]Bucket[selectableString]{{{}}}, 2); got != 0 {
 		t.Fatalf("AddPath = %d, want 0", got)
@@ -181,11 +179,11 @@ func TestStashEvictToPathSkipsStickyBlocks(t *testing.T) {
 	if path[2][0].BlockAddress != 1 || path[2][0].Data != "evictable" {
 		t.Fatalf("leaf bucket = %+v, want evictable block", path[2][0])
 	}
-	if stash.blocks[0].Block.Valid != 0 {
-		t.Fatal("evicted block remains valid in stash")
+	if len(stash.blocks) != 1 {
+		t.Fatalf("stash length = %d, want 1 sticky block", len(stash.blocks))
 	}
-	if stash.blocks[1].Block.Valid != 1 || stash.blocks[1].Sticky != 1 {
-		t.Fatalf("sticky block changed: %+v", stash.blocks[1])
+	if stash.blocks[0].Block.Valid != 1 || stash.blocks[0].Sticky != 1 {
+		t.Fatalf("sticky block changed: %+v", stash.blocks[0])
 	}
 }
 

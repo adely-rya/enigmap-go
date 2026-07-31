@@ -63,6 +63,7 @@ type ClientStats struct {
 	EvictToPathTime   time.Duration
 	WritePathTime     time.Duration
 	UnpinTime         time.Duration
+	MaxStashLength    uint64
 }
 
 // NewOramClient creates an ENIGMAP Path ORAM client backed by server.
@@ -98,7 +99,8 @@ func NewOramClientWithStashSize[T core.Selectable[T]](
 	client := &Client[T]{
 		server: server,
 		stash: Stash[NodeBlock[T]]{
-			blocks: make([]StashedBlock[NodeBlock[T]], stashSize),
+			blocks:   make([]StashedBlock[NodeBlock[T]], 0, stashSize),
+			capacity: stashSize,
 		},
 		random:        cryptoRand.Reader,
 		bucketSize:    bucketSize,
@@ -147,6 +149,9 @@ func (client *Client[T]) BeginAccess(pointer avl.Pointer, newLeaf avl.ORAMPositi
 	started = time.Now()
 	added := client.stash.AddPath(path, client.bucketSize)
 	client.stats.AddPathTime += time.Since(started)
+	if uint64(len(client.stash.blocks)) > client.stats.MaxStashLength {
+		client.stats.MaxStashLength = uint64(len(client.stash.blocks))
+	}
 	if added == 0 {
 		return zeroNode, zeroToken, ErrStashOverflow
 	}
