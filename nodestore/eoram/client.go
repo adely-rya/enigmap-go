@@ -1,5 +1,7 @@
 package eoram
 
+import "github.com/adely-rya/oram/core"
+
 type accessPhase uint8
 
 const (
@@ -17,11 +19,10 @@ type accessState struct {
 
 // Client holds the state required by the ENIGMAP variant of Path ORAM.
 //
-// V is the AVL value type stored in each ORAM block. B is the logical bucket
-// type stored through OramServer.
-type Client[V any, B any] struct {
-	server OramServer[B]
-	stash  Stash[V]
+// T is the selectable payload stored in each ORAM block.
+type Client[T core.Selectable[T]] struct {
+	server OramServer[Bucket[T], core.IO[Bucket[T]]]
+	stash  Stash[T]
 
 	bucketSize    int
 	nextFreeBlock Address

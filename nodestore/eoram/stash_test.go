@@ -2,8 +2,21 @@ package eoram
 
 import "testing"
 
+type selectableString string
+
+func (value selectableString) Select(
+	candidate selectableString,
+	condition int,
+) selectableString {
+	if condition == 1 {
+		return candidate
+	}
+
+	return value
+}
+
 func TestBlockMakeStashedBlock(t *testing.T) {
-	block := Block[string]{
+	block := Block[selectableString]{
 		Address:  11,
 		Position: 22,
 		Valid:    1,
@@ -20,7 +33,7 @@ func TestBlockMakeStashedBlock(t *testing.T) {
 }
 
 func TestBlockMakeStashedBlockNormalizesSticky(t *testing.T) {
-	block := Block[string]{}
+	block := Block[selectableString]{}
 
 	if got := block.MakeStashedBlock(2).Sticky; got != 0 {
 		t.Fatalf("MakeStashedBlock(2).Sticky = %d, want 0", got)

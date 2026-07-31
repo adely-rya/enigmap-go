@@ -1,6 +1,6 @@
 package eoram
 
-import "github.com/adely-rya/enigmap-go/avl"
+import "github.com/adely-rya/oram/core"
 
 // Address identifies a logical ORAM block.
 type Address uint64
@@ -8,10 +8,12 @@ type Address uint64
 // Position identifies a leaf in the ORAM tree.
 type Position uint64
 
-// Block is the logical Path ORAM block used by the AVL NodeStore.
-type Block[V any] struct {
+// Block is a logical Path ORAM block.
+type Block[T core.Selectable[T]] struct {
 	Address  Address
 	Position Position
-	Data     avl.Node[V]
+	Data     T
 	Valid    int
 }
+
+type Bucket[T core.Selectable[T]] []Block[T]
