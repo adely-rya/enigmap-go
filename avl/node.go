@@ -51,6 +51,11 @@ func isNotNullPointer(pointer Pointer) int {
 	return isNotNullAddress(pointer.Address)
 }
 
+func pointerWithPosition(pointer Pointer, position ORAMPosition) Pointer {
+	pointer.Position = position
+	return pointer
+}
+
 type Node[V any] struct {
 	Key   Key // key component of ptr in the paper
 	Value V   // v in the paper

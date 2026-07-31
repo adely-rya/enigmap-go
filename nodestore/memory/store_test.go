@@ -7,34 +7,45 @@ import (
 	"github.com/adely-rya/enigmap-go/avl"
 )
 
-func TestStoreAllocateLoadAndUpdate(t *testing.T) {
+func TestStoreAllocateBeginAndFinishAccess(t *testing.T) {
 	store := New[string]()
 	key := avl.NewKey(make([]byte, avl.KeySize))
 
-	id, err := store.Allocate(avl.Node[string]{Key: key, Value: "first"})
+	pointer, err := store.Allocate(avl.Node[string]{Key: key, Value: "first"})
 	if err != nil {
 		t.Fatalf("allocate node: %v", err)
 	}
-	if id == avl.NullAddress {
+	if pointer.Address == avl.NullAddress {
 		t.Fatal("allocated null address")
 	}
+	if pointer.Position != 0 {
+		t.Fatalf("memory pointer position = %d, want 0", pointer.Position)
+	}
 
-	node, err := store.Load(id)
+	position, err := store.NewPosition()
 	if err != nil {
-		t.Fatalf("load node: %v", err)
+		t.Fatalf("new position: %v", err)
+	}
+	if position != 0 {
+		t.Fatalf("memory new position = %d, want 0", position)
+	}
+
+	node, token, err := store.BeginAccess(pointer, position)
+	if err != nil {
+		t.Fatalf("begin access: %v", err)
 	}
 	if node.Value != "first" {
 		t.Fatalf("unexpected value: %q", node.Value)
 	}
 
 	node.Value = "updated"
-	if err := store.Update(id, node); err != nil {
-		t.Fatalf("update node: %v", err)
+	if err := store.FinishAccess(token, node); err != nil {
+		t.Fatalf("finish access: %v", err)
 	}
 
-	node, err = store.Load(id)
+	node, _, err = store.BeginAccess(pointer, position)
 	if err != nil {
-		t.Fatalf("load updated node: %v", err)
+		t.Fatalf("begin updated access: %v", err)
 	}
 	if node.Value != "updated" {
 		t.Fatalf("unexpected updated value: %q", node.Value)
@@ -43,40 +54,44 @@ func TestStoreAllocateLoadAndUpdate(t *testing.T) {
 
 func TestStoreRejectsUnknownNode(t *testing.T) {
 	store := New[string]()
+	unknown := avl.Pointer{Address: 42}
 
-	if _, err := store.Load(42); !errors.Is(err, ErrNodeNotFound) {
-		t.Fatalf("load error = %v, want %v", err, ErrNodeNotFound)
+	if _, _, err := store.BeginAccess(unknown, 0); !errors.Is(err, ErrNodeNotFound) {
+		t.Fatalf("begin error = %v, want %v", err, ErrNodeNotFound)
 	}
-	if err := store.Update(42, avl.Node[string]{}); !errors.Is(err, ErrNodeNotFound) {
-		t.Fatalf("update error = %v, want %v", err, ErrNodeNotFound)
+	if err := store.FinishAccess(
+		avl.AccessToken{Address: unknown.Address},
+		avl.Node[string]{},
+	); !errors.Is(err, ErrNodeNotFound) {
+		t.Fatalf("finish error = %v, want %v", err, ErrNodeNotFound)
 	}
-	if err := store.FreeMaybe(42, 1); !errors.Is(err, ErrNodeNotFound) {
+	if err := store.FreeMaybe(unknown, 1); !errors.Is(err, ErrNodeNotFound) {
 		t.Fatalf("free error = %v, want %v", err, ErrNodeNotFound)
 	}
 }
 
 func TestStoreFreeMaybe(t *testing.T) {
 	store := New[string]()
-	id, err := store.Allocate(avl.Node[string]{Value: "candidate"})
+	pointer, err := store.Allocate(avl.Node[string]{Value: "candidate"})
 	if err != nil {
 		t.Fatalf("allocate node: %v", err)
 	}
 
-	if err := store.FreeMaybe(id, 0); err != nil {
+	if err := store.FreeMaybe(pointer, 0); err != nil {
 		t.Fatalf("FreeMaybe(condition=0): %v", err)
 	}
-	if _, err := store.Load(id); err != nil {
+	if _, _, err := store.BeginAccess(pointer, 0); err != nil {
 		t.Fatalf("candidate was freed with condition=0: %v", err)
 	}
 
-	if err := store.FreeMaybe(id, 1); err != nil {
+	if err := store.FreeMaybe(pointer, 1); err != nil {
 		t.Fatalf("FreeMaybe(condition=1): %v", err)
 	}
-	if _, err := store.Load(id); !errors.Is(err, ErrNodeNotFound) {
+	if _, _, err := store.BeginAccess(pointer, 0); !errors.Is(err, ErrNodeNotFound) {
 		t.Fatalf("load freed node error = %v, want %v", err, ErrNodeNotFound)
 	}
 
-	if err := store.FreeMaybe(42, 0); err != nil {
+	if err := store.FreeMaybe(avl.Pointer{Address: 42}, 0); err != nil {
 		t.Fatalf("FreeMaybe(unknown, condition=0): %v", err)
 	}
 }

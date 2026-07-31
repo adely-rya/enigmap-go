@@ -12,6 +12,8 @@ func TestPutAllocatesCandidateNode(t *testing.T) {
 		t.Fatalf("NewTree(): %v", err)
 	}
 	allocatedBefore := len(store.allocated)
+	store.loadIDs = nil
+	store.updatedIDs = nil
 	key := getTestKey(0x20)
 
 	if err := tree.Put(key, "candidate"); err != nil {
@@ -49,6 +51,17 @@ func TestPutAllocatesCandidateNode(t *testing.T) {
 	}
 	if candidate.Valid != 1 {
 		t.Fatalf("candidate Valid = %d, want 1", candidate.Valid)
+	}
+	if len(store.loadIDs) != 2*tree.maxDepth {
+		t.Fatalf(
+			"BeginAccess count = %d, want %d",
+			len(store.loadIDs),
+			2*tree.maxDepth,
+		)
+	}
+	assertPairedAccesses(t, store.loadIDs, store.updatedIDs)
+	if store.uncacheCount != 1 {
+		t.Fatalf("UncacheAll count = %d, want 1", store.uncacheCount)
 	}
 }
 

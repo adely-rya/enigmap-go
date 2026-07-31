@@ -90,4 +90,27 @@ paddingし、overwriteの場合も第2パスを省略しない。
 7. Get、第1 Putパス、第2 Putパスの順にposition更新を組み込む。
 8. adapter/eoram、stash cached状態、Large Bucket cacheを接続する。
 
-1〜4は`feature/oram-pointer-foundations`で実施する。5以降は後続変更とする。
+1〜7は`feature/oram-pointer-foundations`で実施する。memory NodeStoreではposition生成と
+`UncacheAll`をno-opとし、Begin/Finishをmapのread/writeへ接続する。8は後続変更とする。
+
+## memory NodeStoreレイテンシ
+
+Begin/Finish分割前後に、次の同一条件で`TestMemoryStoreLatency`を3回実行した。
+
+```text
+GOMAXPROCS=1
+go test -tags latency -run '^TestMemoryStoreLatency$' -count=3 -v
+```
+
+各3回の中央値は次のとおり。単位は1操作あたりのµs。
+
+| entries | new Put（前→後） | overwrite（前→後） | Get（前→後） |
+| ---: | ---: | ---: | ---: |
+| 10 | 6.626 → 4.452 | 6.404 → 4.384 | 2.459 → 1.983 |
+| 100 | 9.836 → 7.070 | 9.784 → 7.007 | 3.504 → 3.065 |
+| 1,000 | 13.489 → 10.299 | 13.336 → 10.183 | 4.622 → 4.943 |
+| 10,000 | 18.795 → 12.280 | 19.591 → 11.286 | 6.471 → 5.184 |
+
+Begin/Finish分割による大幅な性能低下は観測されなかった。短縮値も出ているが、
+memory mapの本質的な処理量を減らす変更ではないため、CPU状態などの測定揺れを含む。
+ここでは高速化とは断定せず、性能回帰なしと判断する。

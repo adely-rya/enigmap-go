@@ -27,6 +27,7 @@ func TestGetAlwaysLoadsMaxDepth(t *testing.T) {
 		}
 
 		store.loadIDs = nil
+		store.updatedIDs = nil
 		_, found, err := tree.Get(getTestKey(0x20))
 		if err != nil {
 			t.Fatalf("Get(): %v", err)
@@ -35,6 +36,7 @@ func TestGetAlwaysLoadsMaxDepth(t *testing.T) {
 			t.Fatal("Get() found key in empty tree")
 		}
 		assertFixedLoads(t, store.loadIDs, tree.maxDepth)
+		assertPairedAccesses(t, store.loadIDs, store.updatedIDs)
 		if store.loadIDs[0] != tree.root.Address {
 			t.Fatalf("first Load() = %d, want root sentinel %d", store.loadIDs[0], tree.root.Address)
 		}
@@ -55,6 +57,7 @@ func TestGetAlwaysLoadsMaxDepth(t *testing.T) {
 		setTestRoot(t, tree, store, root)
 
 		store.loadIDs = nil
+		store.updatedIDs = nil
 		value, found, err := tree.Get(getTestKey(0x20))
 		if err != nil {
 			t.Fatalf("Get(): %v", err)
@@ -63,12 +66,13 @@ func TestGetAlwaysLoadsMaxDepth(t *testing.T) {
 			t.Fatalf("Get() = (%q, %v), want (%q, true)", value, found, "root")
 		}
 		assertFixedLoads(t, store.loadIDs, tree.maxDepth)
-		if store.loadIDs[0] != tree.root.Address || store.loadIDs[1] != root {
+		assertPairedAccesses(t, store.loadIDs, store.updatedIDs)
+		if store.loadIDs[0] != tree.root.Address || store.loadIDs[1] != root.Address {
 			t.Fatalf(
 				"first Loads = %v, want [%d %d]",
 				store.loadIDs[:2],
 				tree.root.Address,
-				root,
+				root.Address,
 			)
 		}
 		assertLoadsFrom(t, store.loadIDs, 2, tree.fake.Address)
@@ -86,7 +90,7 @@ func TestGetAlwaysLoadsMaxDepth(t *testing.T) {
 			t.Fatalf("allocate left: %v", err)
 		}
 		rootNode := getTestNode(0x20, "root", tree.fake)
-		rootNode.Left = Pointer{Address: left}
+		rootNode.Left = left
 		root, err := store.Allocate(rootNode)
 		if err != nil {
 			t.Fatalf("allocate root: %v", err)
@@ -94,6 +98,7 @@ func TestGetAlwaysLoadsMaxDepth(t *testing.T) {
 		setTestRoot(t, tree, store, root)
 
 		store.loadIDs = nil
+		store.updatedIDs = nil
 		value, found, err := tree.Get(getTestKey(0x10))
 		if err != nil {
 			t.Fatalf("Get(): %v", err)
@@ -102,15 +107,16 @@ func TestGetAlwaysLoadsMaxDepth(t *testing.T) {
 			t.Fatalf("Get() = (%q, %v), want (%q, true)", value, found, "left")
 		}
 		assertFixedLoads(t, store.loadIDs, tree.maxDepth)
+		assertPairedAccesses(t, store.loadIDs, store.updatedIDs)
 		if store.loadIDs[0] != tree.root.Address ||
-			store.loadIDs[1] != root ||
-			store.loadIDs[2] != left {
+			store.loadIDs[1] != root.Address ||
+			store.loadIDs[2] != left.Address {
 			t.Fatalf(
 				"first Loads = %v, want [%d %d %d]",
 				store.loadIDs[:3],
 				tree.root.Address,
-				root,
-				left,
+				root.Address,
+				left.Address,
 			)
 		}
 		assertLoadsFrom(t, store.loadIDs, 3, tree.fake.Address)
@@ -130,6 +136,7 @@ func TestGetAlwaysLoadsMaxDepth(t *testing.T) {
 		setTestRoot(t, tree, store, root)
 
 		store.loadIDs = nil
+		store.updatedIDs = nil
 		_, found, err := tree.Get(getTestKey(0x30))
 		if err != nil {
 			t.Fatalf("Get(): %v", err)
@@ -138,12 +145,13 @@ func TestGetAlwaysLoadsMaxDepth(t *testing.T) {
 			t.Fatal("Get() found missing key")
 		}
 		assertFixedLoads(t, store.loadIDs, tree.maxDepth)
-		if store.loadIDs[0] != tree.root.Address || store.loadIDs[1] != root {
+		assertPairedAccesses(t, store.loadIDs, store.updatedIDs)
+		if store.loadIDs[0] != tree.root.Address || store.loadIDs[1] != root.Address {
 			t.Fatalf(
 				"first Loads = %v, want [%d %d]",
 				store.loadIDs[:2],
 				tree.root.Address,
-				root,
+				root.Address,
 			)
 		}
 		assertLoadsFrom(t, store.loadIDs, 2, tree.fake.Address)
@@ -154,14 +162,14 @@ func setTestRoot(
 	t *testing.T,
 	tree *Tree[string],
 	store *treeTestStore[string],
-	root NodeID,
+	root Pointer,
 ) {
 	t.Helper()
 	sentinel, err := store.Load(tree.root.Address)
 	if err != nil {
 		t.Fatalf("load root sentinel: %v", err)
 	}
-	sentinel.Left = Pointer{Address: root}
+	sentinel.Left = root
 	if err := store.Update(tree.root.Address, sentinel); err != nil {
 		t.Fatalf("update root sentinel: %v", err)
 	}
@@ -179,6 +187,27 @@ func assertLoadsFrom(t *testing.T, loads []NodeID, start int, want NodeID) {
 	for i := start; i < len(loads); i++ {
 		if loads[i] != want {
 			t.Fatalf("Load()[%d] = %d, want fake %d", i, loads[i], want)
+		}
+	}
+}
+
+func assertPairedAccesses(t *testing.T, begun, finished []NodeID) {
+	t.Helper()
+	if len(begun) != len(finished) {
+		t.Fatalf(
+			"BeginAccess count = %d, FinishAccess count = %d",
+			len(begun),
+			len(finished),
+		)
+	}
+	for index := range begun {
+		if begun[index] != finished[index] {
+			t.Fatalf(
+				"access[%d]: BeginAccess address = %d, FinishAccess address = %d",
+				index,
+				begun[index],
+				finished[index],
+			)
 		}
 	}
 }

@@ -20,7 +20,12 @@ func NewTree[V any](
 	if err != nil {
 		return nil, err
 	}
-	fake := Pointer{Address: fakeID}
+	fakeOld := fakeID
+	fakePosition, err := store.NewPosition()
+	if err != nil {
+		return nil, err
+	}
+	fake := pointerWithPosition(fakeOld, fakePosition)
 
 	fakeNode := Node[V]{
 		Balance: BalanceBalanced,
@@ -28,11 +33,15 @@ func NewTree[V any](
 		Right:   fake,
 		Valid:   0,
 	}
-	if err := store.Update(fakeID, fakeNode); err != nil {
+	_, token, err := store.BeginAccess(fakeOld, fakePosition)
+	if err != nil {
+		return nil, err
+	}
+	if err := store.FinishAccess(token, fakeNode); err != nil {
 		return nil, err
 	}
 
-	rootID, err := store.Allocate(Node[V]{
+	root, err := store.Allocate(Node[V]{
 		Balance: BalanceBalanced,
 		Left:    fake,
 		Right:   fake,
@@ -43,7 +52,7 @@ func NewTree[V any](
 	}
 
 	return &Tree[V]{
-		root:     Pointer{Address: rootID},
+		root:     root,
 		fake:     fake,
 		maxDepth: calculateMaxDepth(maxNodes),
 		store:    store,

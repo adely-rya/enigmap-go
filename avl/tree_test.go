@@ -17,6 +17,7 @@ type treeTestStore[V any] struct {
 	updatedIDs   []NodeID
 	updatedNodes []Node[V]
 	freedIDs     []NodeID
+	uncacheCount int
 }
 
 func newTreeTestStore[V any]() *treeTestStore[V] {
@@ -26,20 +27,62 @@ func newTreeTestStore[V any]() *treeTestStore[V] {
 	}
 }
 
-func (s *treeTestStore[V]) Allocate(node Node[V]) (NodeID, error) {
+func (s *treeTestStore[V]) NewPosition() (ORAMPosition, error) {
+	return 0, nil
+}
+
+func (s *treeTestStore[V]) Allocate(node Node[V]) (Pointer, error) {
 	if s.allocateErr != nil {
-		return 0, s.allocateErr
+		return Pointer{}, s.allocateErr
 	}
 
 	id := s.nextID
 	s.nextID++
 	s.nodes[id] = node
 	s.allocated = append(s.allocated, node)
-	return id, nil
+	return Pointer{Address: id}, nil
+}
+
+func (s *treeTestStore[V]) BeginAccess(
+	pointer Pointer,
+	_ ORAMPosition,
+) (Node[V], AccessToken, error) {
+	s.loadIDs = append(s.loadIDs, pointer.Address)
+	node, ok := s.nodes[pointer.Address]
+	if !ok {
+		return Node[V]{}, AccessToken{}, errStoreOperation
+	}
+	return node, AccessToken{Address: pointer.Address}, nil
+}
+
+func (s *treeTestStore[V]) FinishAccess(token AccessToken, node Node[V]) error {
+	if s.updateErr != nil {
+		return s.updateErr
+	}
+
+	s.nodes[token.Address] = node
+	s.updatedIDs = append(s.updatedIDs, token.Address)
+	s.updatedNodes = append(s.updatedNodes, node)
+	return nil
+}
+
+func (s *treeTestStore[V]) FreeMaybe(pointer Pointer, condition int) error {
+	if condition&1 == 0 {
+		return nil
+	}
+	if _, ok := s.nodes[pointer.Address]; !ok {
+		return errStoreOperation
+	}
+	delete(s.nodes, pointer.Address)
+	s.freedIDs = append(s.freedIDs, pointer.Address)
+	return nil
+}
+
+func (s *treeTestStore[V]) UncacheAll() {
+	s.uncacheCount++
 }
 
 func (s *treeTestStore[V]) Load(id NodeID) (Node[V], error) {
-	s.loadIDs = append(s.loadIDs, id)
 	node, ok := s.nodes[id]
 	if !ok {
 		return Node[V]{}, errStoreOperation
@@ -51,22 +94,7 @@ func (s *treeTestStore[V]) Update(id NodeID, node Node[V]) error {
 	if s.updateErr != nil {
 		return s.updateErr
 	}
-
 	s.nodes[id] = node
-	s.updatedIDs = append(s.updatedIDs, id)
-	s.updatedNodes = append(s.updatedNodes, node)
-	return nil
-}
-
-func (s *treeTestStore[V]) FreeMaybe(id NodeID, condition int) error {
-	if condition&1 == 0 {
-		return nil
-	}
-	if _, ok := s.nodes[id]; !ok {
-		return errStoreOperation
-	}
-	delete(s.nodes, id)
-	s.freedIDs = append(s.freedIDs, id)
 	return nil
 }
 

@@ -20,39 +20,48 @@ func New[V any]() *Store[V] {
 	}
 }
 
-func (s *Store[V]) Allocate(node avl.Node[V]) (avl.NodeID, error) {
+func (s *Store[V]) NewPosition() (avl.ORAMPosition, error) {
+	return 0, nil
+}
+
+func (s *Store[V]) Allocate(node avl.Node[V]) (avl.Pointer, error) {
 	id := s.nextID
 	s.nextID++
 	s.nodes[id] = node
-	return id, nil
+	return avl.Pointer{Address: id}, nil
 }
 
-func (s *Store[V]) Load(id avl.NodeID) (avl.Node[V], error) {
-	node, ok := s.nodes[id]
+func (s *Store[V]) BeginAccess(
+	pointer avl.Pointer,
+	_ avl.ORAMPosition,
+) (avl.Node[V], avl.AccessToken, error) {
+	node, ok := s.nodes[pointer.Address]
 	if !ok {
-		return avl.Node[V]{}, ErrNodeNotFound
+		return avl.Node[V]{}, avl.AccessToken{}, ErrNodeNotFound
 	}
-	return node, nil
+	return node, avl.AccessToken{Address: pointer.Address}, nil
 }
 
-func (s *Store[V]) Update(id avl.NodeID, node avl.Node[V]) error {
-	if _, ok := s.nodes[id]; !ok {
+func (s *Store[V]) FinishAccess(token avl.AccessToken, node avl.Node[V]) error {
+	if _, ok := s.nodes[token.Address]; !ok {
 		return ErrNodeNotFound
 	}
-	s.nodes[id] = node
+	s.nodes[token.Address] = node
 	return nil
 }
 
 // FreeMaybe frees id when condition is 1. The memory backend is intended for
 // functional testing; an ORAM backend must keep the physical access trace
 // independent of condition.
-func (s *Store[V]) FreeMaybe(id avl.NodeID, condition int) error {
+func (s *Store[V]) FreeMaybe(pointer avl.Pointer, condition int) error {
 	if condition&1 == 0 {
 		return nil
 	}
-	if _, ok := s.nodes[id]; !ok {
+	if _, ok := s.nodes[pointer.Address]; !ok {
 		return ErrNodeNotFound
 	}
-	delete(s.nodes, id)
+	delete(s.nodes, pointer.Address)
 	return nil
 }
+
+func (s *Store[V]) UncacheAll() {}

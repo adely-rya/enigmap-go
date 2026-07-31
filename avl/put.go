@@ -227,6 +227,8 @@ func isThreeNodeRotationMember(threeAtPivot, threeAtPivotChild, threeAtPivotGran
 }
 
 func (t *Tree[V]) Put(key []byte, value V) error {
+	defer t.store.UncacheAll()
+
 	insertKey := NewKey(key)
 
 	candidate := Node[V]{
@@ -240,25 +242,40 @@ func (t *Tree[V]) Put(key []byte, value V) error {
 
 	//いったん新たなノードを挿入しておく
 	//もしkeyがすでに存在していたら後でこのAllocateしたノードは消す　ifを消すために必ずAllocate
-	candidateID, err := t.store.Allocate(candidate)
+	candidatePointer, err := t.store.Allocate(candidate)
 	if err != nil {
 		return err
 	}
-	candidatePointer := Pointer{Address: candidateID}
 
 	metadata := putMetadata{
 		rotation: rotationNone,
 	}
 
 	currentID := t.root
+	currentNewPosition, err := t.store.NewPosition()
+	if err != nil {
+		return err
+	}
+	t.root.Position = currentNewPosition
 	parentID := Pointer{}
 	insertionPointFound := 0 //挿入ポイント判定
 
 	for depth := 0; depth < t.maxDepth; depth++ {
-		node, err := t.store.Load(currentID.Address)
+		nextNewPosition, err := t.store.NewPosition()
 		if err != nil {
 			return err
 		}
+
+		node, token, err := t.store.BeginAccess(currentID, currentNewPosition)
+		if err != nil {
+			return err
+		}
+		currentNew := pointerWithPosition(currentID, currentNewPosition)
+		t.fake = selectPointer(
+			t.fake,
+			currentNew,
+			pointerAddressesEqual(currentID, t.fake),
+		)
 
 		comparison := CompareKey(insertKey, node.Key)
 		equal := subtle.ConstantTimeEq(int32(comparison), 0) // if key == node.Key { 1 } else { 0 }; 一致なら1
@@ -277,6 +294,9 @@ func (t *Tree[V]) Put(key []byte, value V) error {
 		node.Value = selectValue(node.Value, value, match)                // if match == 1 { valueを上書き }; 既存キーを更新
 
 		next := selectPointer(node.Left, node.Right, right)
+		nextNew := pointerWithPosition(next, nextNewPosition)
+		node.Left = selectPointer(node.Left, nextNew, conditionNot(right))
+		node.Right = selectPointer(node.Right, nextNew, right)
 
 		pivotExists := isNotNullPointer(metadata.pivotID)
 		currentIsPivotChild := currentIsStoredNode(
@@ -408,7 +428,7 @@ func (t *Tree[V]) Put(key []byte, value V) error {
 		node.Left = selectPointer(node.Left, candidatePointer, insertLeft)
 		node.Right = selectPointer(node.Right, candidatePointer, insertRight) //左右両方への処理をすることで実行時間の左右差を無くしている。
 
-		if err := t.store.Update(currentID.Address, node); err != nil {
+		if err := t.store.FinishAccess(token, node); err != nil {
 			return err
 		}
 
@@ -418,6 +438,7 @@ func (t *Tree[V]) Put(key []byte, value V) error {
 			conditionNot(currentIsFake),
 		) // currentが実ノードなら、次の走査で使う親として保持
 		currentID = selectPointer(t.fake, next, isNotNullPointer(next))
+		currentNewPosition = nextNewPosition
 	}
 
 	//操作種別の判定
@@ -476,27 +497,46 @@ func (t *Tree[V]) Put(key []byte, value V) error {
 		threeNodeRotation,
 	)
 
-	err = t.store.FreeMaybe(candidateID, metadata.keyExists)
+	err = t.store.FreeMaybe(candidatePointer, metadata.keyExists)
 	if err != nil {
 		return err
 	}
 
 	currentID = t.root //走査のスタートノード
+	currentNewPosition, err = t.store.NewPosition()
+	if err != nil {
+		return err
+	}
+	t.root.Position = currentNewPosition
 	newInsertion := isNewInsertion(metadata.keyExists, insertionPointFound)
 	rotationIsNone := rotationTypesEqual(metadata.rotation, rotationNone) //回転が必要か
 	rebalanceActive := shouldStartPathBalance(newInsertion, rotationIsNone)
 
 	for depth := 0; depth < t.maxDepth; depth++ {
-		node, err := t.store.Load(currentID.Address)
+		nextNewPosition, err := t.store.NewPosition()
 		if err != nil {
 			return err
 		}
+
+		node, token, err := t.store.BeginAccess(currentID, currentNewPosition)
+		if err != nil {
+			return err
+		}
+		currentNew := pointerWithPosition(currentID, currentNewPosition)
+		t.fake = selectPointer(
+			t.fake,
+			currentNew,
+			pointerAddressesEqual(currentID, t.fake),
+		)
 
 		comparison := CompareKey(insertKey, node.Key)
 		right := subtle.ConstantTimeEq(int32(comparison), 1) // if key > node.Key { 1 } else { 0 }; 右へ進むなら1
 		valid := subtle.ConstantTimeByteEq(node.Valid, 1)    // if node is real { 1 } else { 0 }; 実ノードなら1
 		right = directionForRealNode(right, valid)           // fakeならLeft、実ノードなら比較結果の方向
 		next := selectPointer(node.Left, node.Right, right)  // 回転などの更新走査をする前に次のアクセス先を明らかに
+		nextNew := pointerWithPosition(next, nextNewPosition)
+		node.Left = selectPointer(node.Left, nextNew, conditionNot(right))
+		node.Right = selectPointer(node.Right, nextNew, right)
 
 		atPivot := currentIsStoredNode(currentID, metadata.pivotID, pivotExists)
 		atPivotParent := currentIsStoredNode(currentID, metadata.pivotParentID, pivotExists)
@@ -835,11 +875,12 @@ func (t *Tree[V]) Put(key []byte, value V) error {
 			atCandidate,
 		) // if candidate { active = 0 }; 挿入位置で終了
 
-		if err := t.store.Update(currentID.Address, node); err != nil {
+		if err := t.store.FinishAccess(token, node); err != nil {
 			return err
 		}
 
 		currentID = selectPointer(t.fake, next, isNotNullPointer(next))
+		currentNewPosition = nextNewPosition
 	}
 
 	return err
