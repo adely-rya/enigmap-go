@@ -1,11 +1,5 @@
 package eoram
 
-// Address identifies a logical ORAM block.
-type Address uint64
-
-// Position identifies a leaf in the ORAM tree.
-type Position uint64
-
 type accessPhase uint8
 
 const (
@@ -23,11 +17,11 @@ type accessState struct {
 
 // Client holds the state required by the ENIGMAP variant of Path ORAM.
 //
-// B is the logical bucket type stored through OramServer. T is the stash entry
-// type used by the ENIGMAP-specific stash implementation.
-type Client[B any, T any] struct {
+// V is the AVL value type stored in each ORAM block. B is the logical bucket
+// type stored through OramServer.
+type Client[V any, B any] struct {
 	server OramServer[B]
-	stash  Stash[T]
+	stash  Stash[Block[V]]
 
 	bucketSize    int
 	nextFreeBlock Address
