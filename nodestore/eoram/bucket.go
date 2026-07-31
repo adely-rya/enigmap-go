@@ -33,7 +33,7 @@ const (
 	LevelsPerLargeBucket            = 3
 	BucketsPerLargeBucket           = (1 << LevelsPerLargeBucket) - 1
 	serializedLargeBucketSize       = BucketsPerLargeBucket * serializedBucketSize
-	DefaultLargeBucketCacheCapacity = 85
+	DefaultLargeBucketCacheCapacity = 30
 )
 
 // Serialize encodes a fixed-size bucket for encryption or file storage.
