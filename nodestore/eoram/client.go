@@ -4,6 +4,7 @@ import (
 	cryptoRand "crypto/rand"
 	"encoding/binary"
 	"errors"
+	"fmt"
 	"io"
 	"math"
 
@@ -12,14 +13,15 @@ import (
 )
 
 const (
-	defaultBucketSize = 5
+	defaultBucketSize = BucketSize
 	securityBits      = 128
 )
 
 var ErrStashOverflow = errors.New("eoram: stash overflow")
-var ErrBeginAccessIncomplete = errors.New(
-	"eoram: BeginAccess block lookup is not implemented",
-)
+var ErrBlockNotFound = errors.New("eoram: block not found")
+var ErrAccessAlreadyOpen = errors.New("eoram: access already open")
+var ErrNoAccessOpen = errors.New("eoram: no access open")
+var ErrAccessTokenMismatch = errors.New("eoram: access token mismatch")
 
 type accessPhase uint8
 
@@ -30,10 +32,11 @@ const (
 
 // accessState records the single BeginAccess operation awaiting FinishAccess.
 type accessState struct {
-	phase       accessPhase
-	address     Address
-	oldPosition Position
-	newPosition Position
+	phase        accessPhase
+	blockAddress BlockAddress
+	oldLeaf      Leaf
+	newLeaf      Leaf
+	pathLength   int
 }
 
 // Client holds the state required by the ENIGMAP variant of Path ORAM.
@@ -45,7 +48,7 @@ type Client[T core.Selectable[T]] struct {
 	random io.Reader
 
 	bucketSize    int
-	nextFreeBlock Address
+	nextFreeBlock BlockAddress
 	access        accessState
 }
 
@@ -68,17 +71,23 @@ func NewOramClient[T core.Selectable[T]](
 			(-math.Log2(0.6002)),
 	))
 
-	return &Client[T]{
+	client := &Client[T]{
 		server: server,
 		stash: Stash[NodeBlock[T]]{
 			blocks: make([]StashedBlock[NodeBlock[T]], stashSize),
 		},
-		random:     cryptoRand.Reader,
-		bucketSize: bucketSize,
+		random:        cryptoRand.Reader,
+		bucketSize:    bucketSize,
+		nextFreeBlock: 1,
 		access: accessState{
 			phase: accessReady,
 		},
-	}, nil
+	}
+	if err := client.initializeTree(); err != nil {
+		return nil, err
+	}
+
+	return client, nil
 }
 
 // ランダムにリーフを選定する
@@ -95,39 +104,124 @@ func (client *Client[T]) NewPosition() (avl.ORAMPosition, error) {
 }
 
 // BeginAccess starts one AVL node access.
-func (client *Client[T]) BeginAccess(
-	pointer avl.Pointer,
-	newPosition avl.ORAMPosition,
-) (avl.Node[T], avl.AccessToken, error) {
-	var zerovalue avl.Node[T]
-	var zeroID avl.AccessToken
+func (client *Client[T]) BeginAccess(pointer avl.Pointer, newLeaf avl.ORAMPosition) (avl.Node[T], avl.AccessToken, error) {
+	var zeroNode avl.Node[T]
+	var zeroToken avl.AccessToken
 
-	leaf := Position(pointer.Position)
-	path, err := client.server.ReadPath(leaf)
+	if client.access.phase != accessReady {
+		return zeroNode, zeroToken, ErrAccessAlreadyOpen
+	}
+
+	oldLeaf := Leaf(pointer.Position)
+	path, err := client.server.ReadPath(oldLeaf)
 	if err != nil {
-		return zerovalue, zeroID, err
+		return zeroNode, zeroToken, err
 	}
 
 	if client.stash.AddPath(path, client.bucketSize) == 0 {
-		return zerovalue, zeroID, ErrStashOverflow
+		return zeroNode, zeroToken, ErrStashOverflow
 	}
 
-	return zerovalue, zeroID, ErrBeginAccessIncomplete
+	blockAddress := BlockAddress(pointer.Address)
+	value, found := client.stash.PrepareAccess(
+		blockAddress,
+		Leaf(newLeaf),
+	)
+
+	if found == 0 {
+		return zeroNode, zeroToken, fmt.Errorf(
+			"%w: BeginAccess blockAddress=%d oldLeaf=%d",
+			ErrBlockNotFound,
+			blockAddress,
+			oldLeaf,
+		)
+	}
+
+	client.access = accessState{
+		phase:        accessOpen,
+		blockAddress: blockAddress,
+		oldLeaf:      oldLeaf,
+		newLeaf:      Leaf(newLeaf),
+		pathLength:   len(path),
+	}
+
+	return value.Node, avl.AccessToken{Address: pointer.Address}, nil
 }
 
 // FinishAccess updates the AVL node opened by BeginAccess.
-func (client *Client[T]) FinishAccess(
-	token avl.AccessToken,
-	node avl.Node[T],
-) error {
-	panic("eoram: Client.FinishAccess is not implemented")
+func (client *Client[T]) FinishAccess(token avl.AccessToken, node avl.Node[T]) error {
+	//先にBeginAccessが呼ばれているかを検証
+	if err := client.validateFinishAccess(token); err != nil {
+		return err
+	}
+
+	if client.stash.UpdateAccessedBlock(
+		client.access.blockAddress,
+		NodeBlock[T]{Node: node},
+	) == 0 {
+		return fmt.Errorf(
+			"%w: FinishAccess blockAddress=%d",
+			ErrBlockNotFound,
+			client.access.blockAddress,
+		)
+	}
+
+	path := client.stash.EvictToPath(
+		client.access.oldLeaf,
+		client.access.pathLength,
+		client.bucketSize,
+	)
+	if err := client.server.WritePath(path, client.access.oldLeaf); err != nil {
+		return err
+	}
+
+	if client.stash.Unpin(client.access.blockAddress) == 0 {
+		return fmt.Errorf(
+			"%w: FinishAccess unpin blockAddress=%d",
+			ErrBlockNotFound,
+			client.access.blockAddress,
+		)
+	}
+	client.access = accessState{phase: accessReady}
+
+	return nil
+}
+
+func (client *Client[T]) validateFinishAccess(token avl.AccessToken) error {
+	if client.access.phase != accessOpen {
+		return ErrNoAccessOpen
+	}
+	if BlockAddress(token.Address) != client.access.blockAddress {
+		return ErrAccessTokenMismatch
+	}
+
+	return nil
 }
 
 // Allocate creates one pointer-addressed AVL node block.
-func (client *Client[T]) Allocate(
-	node avl.Node[T],
-) (avl.Pointer, error) {
-	panic("eoram: Client.Allocate is not implemented")
+func (client *Client[T]) Allocate(node avl.Node[T]) (avl.Pointer, error) {
+	var zero avl.Pointer
+
+	newLeaf, err := client.NewPosition()
+	if err != nil {
+		return zero, err
+	}
+
+	blockAddress := client.nextFreeBlock
+	if client.stash.PutPinned(Block[NodeBlock[T]]{
+		BlockAddress: blockAddress,
+		Leaf:         Leaf(newLeaf),
+		Data:         NodeBlock[T]{Node: node},
+		Valid:        1,
+	}) == 0 {
+		return zero, ErrStashOverflow
+	}
+
+	client.nextFreeBlock++
+	return avl.Pointer{
+		Address:  avl.NodeID(blockAddress),
+		Position: newLeaf,
+	}, nil
 }
 
 // FreeMaybe conditionally releases an AVL node pointer.
@@ -135,14 +229,21 @@ func (client *Client[T]) FreeMaybe(
 	pointer avl.Pointer,
 	condition int,
 ) error {
-	panic("eoram: Client.FreeMaybe is not implemented")
+	if client.stash.FreeMaybe(
+		BlockAddress(pointer.Address),
+		condition,
+	) == 0 {
+		return fmt.Errorf(
+			"%w: FreeMaybe blockAddress=%d",
+			ErrBlockNotFound,
+			pointer.Address,
+		)
+	}
+
+	return nil
 }
 
 // UncacheAll marks every sticky stash block as eligible for eviction.
 func (client *Client[T]) UncacheAll() {
-	panic("eoram: Client.UncacheAll is not implemented")
-}
-
-func assertNodeStore[T core.Selectable[T]]() {
-	var _ avl.NodeStore[T] = (*Client[T])(nil)
+	client.stash.UnpinAll()
 }

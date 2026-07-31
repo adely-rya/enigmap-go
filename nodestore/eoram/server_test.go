@@ -79,3 +79,54 @@ func TestOramServerReadPathRejectsInvalidPosition(t *testing.T) {
 		t.Fatal("ReadPath accepted out-of-range position")
 	}
 }
+
+func TestOramServerWritePathWritesRootToLeaf(t *testing.T) {
+	store := storage.NewMemoryStorage[int](7)
+	server, err := NewOramServer(store)
+	if err != nil {
+		t.Fatalf("NewOramServer: %v", err)
+	}
+
+	if err := server.WritePath([]int{10, 20, 30}, 2); err != nil {
+		t.Fatalf("WritePath: %v", err)
+	}
+
+	want := map[uint64]int{
+		0: 10,
+		2: 20,
+		5: 30,
+	}
+	for index, wantValue := range want {
+		got, err := store.Read(index)
+		if err != nil {
+			t.Fatalf("read index %d: %v", index, err)
+		}
+		if got != wantValue {
+			t.Fatalf("storage[%d] = %d, want %d", index, got, wantValue)
+		}
+	}
+}
+
+func TestOramServerWritePathRejectsLengthMismatch(t *testing.T) {
+	store := storage.NewMemoryStorage[int](7)
+	server, err := NewOramServer(store)
+	if err != nil {
+		t.Fatalf("NewOramServer: %v", err)
+	}
+
+	if err := server.WritePath([]int{10, 20}, 2); err == nil {
+		t.Fatal("WritePath accepted a path with the wrong length")
+	}
+}
+
+func TestOramServerWritePathRejectsInvalidPosition(t *testing.T) {
+	store := storage.NewMemoryStorage[int](7)
+	server, err := NewOramServer(store)
+	if err != nil {
+		t.Fatalf("NewOramServer: %v", err)
+	}
+
+	if err := server.WritePath([]int{10, 20, 30}, 4); err == nil {
+		t.Fatal("WritePath accepted out-of-range position")
+	}
+}

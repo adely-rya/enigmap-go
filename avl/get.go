@@ -53,6 +53,11 @@ func (t *Tree[V]) Get(key []byte) (V, bool, error) {
 			var zero V
 			return zero, false, err
 		}
+		next = selectPointer(
+			next,
+			t.fake,
+			pointerAddressesEqual(next, t.fake),
+		)
 
 		current = selectPointer(
 			t.fake,

@@ -13,6 +13,8 @@ func NewTree[V any](
 	store NodeStore[V],
 	maxNodes uint64,
 ) (*Tree[V], error) {
+	defer store.UncacheAll()
+
 	fakeID, err := store.Allocate(Node[V]{
 		Balance: BalanceBalanced,
 		Valid:   0,

@@ -37,6 +37,60 @@ type putMetadata struct {
 	rotation             rotationType
 }
 
+func refreshPointerLeaf(pointer, accessed Pointer) Pointer {
+	return selectPointer(
+		pointer,
+		accessed,
+		pointerAddressesEqual(pointer, accessed),
+	)
+}
+
+func (metadata *putMetadata) refreshPointerLeaves(accessed Pointer) {
+	metadata.insertionParentID = refreshPointerLeaf(metadata.insertionParentID, accessed)
+	metadata.existingNodeID = refreshPointerLeaf(metadata.existingNodeID, accessed)
+	metadata.pivotID = refreshPointerLeaf(metadata.pivotID, accessed)
+	metadata.pivotParentID = refreshPointerLeaf(metadata.pivotParentID, accessed)
+	metadata.pivotChildID = refreshPointerLeaf(metadata.pivotChildID, accessed)
+	metadata.pivotChildOppositeID = refreshPointerLeaf(metadata.pivotChildOppositeID, accessed)
+	metadata.pivotGrandchildID = refreshPointerLeaf(metadata.pivotGrandchildID, accessed)
+	metadata.grandchildLeftID = refreshPointerLeaf(metadata.grandchildLeftID, accessed)
+	metadata.grandchildRightID = refreshPointerLeaf(metadata.grandchildRightID, accessed)
+}
+
+func pointerWithPlannedLeaf(
+	pointer Pointer,
+	addresses []NodeID,
+	leaves []ORAMPosition,
+) Pointer {
+	found := 0
+	for index := 0; index < len(addresses); index++ {
+		match := nodeIDsEqual(pointer.Address, addresses[index]) & conditionNot(found)
+		pointer.Position = ORAMPosition(selectNodeID(
+			NodeID(pointer.Position),
+			NodeID(leaves[index]),
+			match,
+		))
+		found |= match
+	}
+
+	return pointer
+}
+
+func (metadata *putMetadata) applyPlannedLeaves(
+	addresses []NodeID,
+	leaves []ORAMPosition,
+) {
+	metadata.insertionParentID = pointerWithPlannedLeaf(metadata.insertionParentID, addresses, leaves)
+	metadata.existingNodeID = pointerWithPlannedLeaf(metadata.existingNodeID, addresses, leaves)
+	metadata.pivotID = pointerWithPlannedLeaf(metadata.pivotID, addresses, leaves)
+	metadata.pivotParentID = pointerWithPlannedLeaf(metadata.pivotParentID, addresses, leaves)
+	metadata.pivotChildID = pointerWithPlannedLeaf(metadata.pivotChildID, addresses, leaves)
+	metadata.pivotChildOppositeID = pointerWithPlannedLeaf(metadata.pivotChildOppositeID, addresses, leaves)
+	metadata.pivotGrandchildID = pointerWithPlannedLeaf(metadata.pivotGrandchildID, addresses, leaves)
+	metadata.grandchildLeftID = pointerWithPlannedLeaf(metadata.grandchildLeftID, addresses, leaves)
+	metadata.grandchildRightID = pointerWithPlannedLeaf(metadata.grandchildRightID, addresses, leaves)
+}
+
 // conditionNot は、0/1で表した条件を反転する。
 // conditionが0なら1、1なら0を返す。
 // secretに応じた分岐を作らないため、ifではなくビット演算で反転する。
@@ -259,8 +313,10 @@ func (t *Tree[V]) Put(key []byte, value V) error {
 	t.root.Position = currentNewPosition
 	parentID := Pointer{}
 	insertionPointFound := 0 //挿入ポイント判定
+	firstPassAddresses := make([]NodeID, t.maxDepth)
 
 	for depth := 0; depth < t.maxDepth; depth++ {
+		firstPassAddresses[depth] = currentID.Address
 		nextNewPosition, err := t.store.NewPosition()
 		if err != nil {
 			return err
@@ -271,6 +327,8 @@ func (t *Tree[V]) Put(key []byte, value V) error {
 			return err
 		}
 		currentNew := pointerWithPosition(currentID, currentNewPosition)
+		metadata.refreshPointerLeaves(currentNew)
+		candidatePointer = refreshPointerLeaf(candidatePointer, currentNew)
 		t.fake = selectPointer(
 			t.fake,
 			currentNew,
@@ -287,7 +345,7 @@ func (t *Tree[V]) Put(key []byte, value V) error {
 
 		metadata.existingNodeID = selectPointer(
 			metadata.existingNodeID,
-			currentID,
+			currentNew,
 			match,
 		)
 		metadata.keyExists = rememberCondition(metadata.keyExists, match) // 一度一致したら1を保持
@@ -354,7 +412,7 @@ func (t *Tree[V]) Put(key []byte, value V) error {
 		pivotCandidate := isPivotCandidate(valid, balanced) // 実ノードかつ非Balancedなら1
 		metadata.pivotID = selectPointer(
 			metadata.pivotID,
-			currentID,
+			currentNew,
 			pivotCandidate,
 		) //node.Valid == 1 && node.Balance != BalanceBalanced なら回転の可能性があるので今のブロックを保存
 		metadata.pivotParentID = selectPointer(
@@ -394,7 +452,7 @@ func (t *Tree[V]) Put(key []byte, value V) error {
 
 		metadata.insertionParentID = selectPointer( //挿入する場所の親を保存
 			metadata.insertionParentID,
-			currentID,
+			currentNew,
 			foundInsertionPoint,
 		)
 		metadata.insertionRight = selectInt( //親から見てRightとLeftのどちらに挿入するかを保存
@@ -431,10 +489,15 @@ func (t *Tree[V]) Put(key []byte, value V) error {
 		if err := t.store.FinishAccess(token, node); err != nil {
 			return err
 		}
+		next = selectPointer(
+			next,
+			t.fake,
+			pointerAddressesEqual(next, t.fake),
+		)
 
 		parentID = selectPointer(
 			parentID,
-			currentID,
+			currentNew,
 			conditionNot(currentIsFake),
 		) // currentが実ノードなら、次の走査で使う親として保持
 		currentID = selectPointer(t.fake, next, isNotNullPointer(next))
@@ -502,27 +565,41 @@ func (t *Tree[V]) Put(key []byte, value V) error {
 		return err
 	}
 
-	currentID = t.root //走査のスタートノード
-	currentNewPosition, err = t.store.NewPosition()
+	secondPassLeaves := make([]ORAMPosition, t.maxDepth+1)
+	for depth := 0; depth < len(secondPassLeaves); depth++ {
+		secondPassLeaves[depth], err = t.store.NewPosition()
+		if err != nil {
+			return err
+		}
+	}
+	candidateSecondLeaf, err := t.store.NewPosition()
 	if err != nil {
 		return err
 	}
+	metadata.applyPlannedLeaves(firstPassAddresses, secondPassLeaves[:t.maxDepth])
+	candidatePointer.Position = candidateSecondLeaf
+
+	currentID = t.root //走査のスタートノード
+	currentNewPosition = secondPassLeaves[0]
 	t.root.Position = currentNewPosition
 	newInsertion := isNewInsertion(metadata.keyExists, insertionPointFound)
 	rotationIsNone := rotationTypesEqual(metadata.rotation, rotationNone) //回転が必要か
 	rebalanceActive := shouldStartPathBalance(newInsertion, rotationIsNone)
 
 	for depth := 0; depth < t.maxDepth; depth++ {
-		nextNewPosition, err := t.store.NewPosition()
-		if err != nil {
-			return err
-		}
+		currentNewPosition = ORAMPosition(selectNodeID(
+			NodeID(secondPassLeaves[depth]),
+			NodeID(candidateSecondLeaf),
+			pointerAddressesEqual(currentID, candidatePointer),
+		))
 
 		node, token, err := t.store.BeginAccess(currentID, currentNewPosition)
 		if err != nil {
 			return err
 		}
 		currentNew := pointerWithPosition(currentID, currentNewPosition)
+		metadata.refreshPointerLeaves(currentNew)
+		candidatePointer = refreshPointerLeaf(candidatePointer, currentNew)
 		t.fake = selectPointer(
 			t.fake,
 			currentNew,
@@ -534,6 +611,11 @@ func (t *Tree[V]) Put(key []byte, value V) error {
 		valid := subtle.ConstantTimeByteEq(node.Valid, 1)    // if node is real { 1 } else { 0 }; 実ノードなら1
 		right = directionForRealNode(right, valid)           // fakeならLeft、実ノードなら比較結果の方向
 		next := selectPointer(node.Left, node.Right, right)  // 回転などの更新走査をする前に次のアクセス先を明らかに
+		nextNewPosition := ORAMPosition(selectNodeID(
+			NodeID(secondPassLeaves[depth+1]),
+			NodeID(candidateSecondLeaf),
+			pointerAddressesEqual(next, candidatePointer),
+		))
 		nextNew := pointerWithPosition(next, nextNewPosition)
 		node.Left = selectPointer(node.Left, nextNew, conditionNot(right))
 		node.Right = selectPointer(node.Right, nextNew, right)
@@ -878,6 +960,11 @@ func (t *Tree[V]) Put(key []byte, value V) error {
 		if err := t.store.FinishAccess(token, node); err != nil {
 			return err
 		}
+		next = selectPointer(
+			next,
+			t.fake,
+			pointerAddressesEqual(next, t.fake),
+		)
 
 		currentID = selectPointer(t.fake, next, isNotNullPointer(next))
 		currentNewPosition = nextNewPosition

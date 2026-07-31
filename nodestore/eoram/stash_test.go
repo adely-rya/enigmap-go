@@ -17,9 +17,9 @@ func (value selectableString) Select(
 
 func TestBlockMakeStashedBlock(t *testing.T) {
 	block := Block[selectableString]{
-		Address:  11,
-		Position: 22,
-		Valid:    1,
+		BlockAddress: 11,
+		Leaf:         22,
+		Valid:        1,
 	}
 
 	stashed := block.MakeStashedBlock(1)
@@ -49,11 +49,11 @@ func TestStashAddPath(t *testing.T) {
 	}
 	path := []Bucket[selectableString]{
 		{
-			{Address: 1, Data: "root", Valid: 1},
+			{BlockAddress: 1, Data: "root", Valid: 1},
 			{},
 		},
 		{
-			{Address: 2, Data: "leaf", Valid: 1},
+			{BlockAddress: 2, Data: "leaf", Valid: 1},
 			{},
 		},
 	}
@@ -62,23 +62,23 @@ func TestStashAddPath(t *testing.T) {
 		t.Fatalf("AddPath = %d, want 1", got)
 	}
 
-	want := map[Address]selectableString{1: "root", 2: "leaf"}
+	want := map[BlockAddress]selectableString{1: "root", 2: "leaf"}
 	for _, entry := range stash.blocks {
 		if entry.Block.Valid == 0 {
 			continue
 		}
-		if entry.Block.Data != want[entry.Block.Address] {
+		if entry.Block.Data != want[entry.Block.BlockAddress] {
 			t.Fatalf(
 				"stash block %d data = %q, want %q",
-				entry.Block.Address,
+				entry.Block.BlockAddress,
 				entry.Block.Data,
-				want[entry.Block.Address],
+				want[entry.Block.BlockAddress],
 			)
 		}
 		if entry.Sticky != 0 {
-			t.Fatalf("path block %d is sticky", entry.Block.Address)
+			t.Fatalf("path block %d is sticky", entry.Block.BlockAddress)
 		}
-		delete(want, entry.Block.Address)
+		delete(want, entry.Block.BlockAddress)
 	}
 	if len(want) != 0 {
 		t.Fatalf("blocks missing from stash: %v", want)
@@ -91,8 +91,8 @@ func TestStashAddPathReportsOverflow(t *testing.T) {
 	}
 	path := []Bucket[selectableString]{
 		{
-			{Address: 1, Valid: 1},
-			{Address: 2, Valid: 1},
+			{BlockAddress: 1, Valid: 1},
+			{BlockAddress: 2, Valid: 1},
 		},
 	}
 
@@ -108,5 +108,114 @@ func TestStashAddPathRejectsBucketSizeMismatch(t *testing.T) {
 
 	if got := stash.AddPath([]Bucket[selectableString]{{{}}}, 2); got != 0 {
 		t.Fatalf("AddPath = %d, want 0", got)
+	}
+}
+
+func TestStashGetReturnsBlockData(t *testing.T) {
+	stash := Stash[selectableString]{
+		blocks: []StashedBlock[selectableString]{
+			Block[selectableString]{
+				BlockAddress: 10,
+				Data:         "first",
+				Valid:        1,
+			}.MakeStashedBlock(0),
+			Block[selectableString]{
+				BlockAddress: 20,
+				Data:         "wanted",
+				Valid:        1,
+			}.MakeStashedBlock(1),
+			{},
+		},
+	}
+
+	got, found := stash.Get(20)
+	if found != 1 {
+		t.Fatalf("Get found = %d, want 1", found)
+	}
+	if got != "wanted" {
+		t.Fatalf("Get data = %q, want %q", got, "wanted")
+	}
+}
+
+func TestStashGetReturnsNotFound(t *testing.T) {
+	stash := Stash[selectableString]{
+		blocks: []StashedBlock[selectableString]{
+			Block[selectableString]{
+				BlockAddress: 10,
+				Data:         "stored",
+				Valid:        1,
+			}.MakeStashedBlock(0),
+			{},
+		},
+	}
+
+	got, found := stash.Get(99)
+	if found != 0 {
+		t.Fatalf("Get found = %d, want 0", found)
+	}
+	if got != "" {
+		t.Fatalf("Get data = %q, want zero value", got)
+	}
+}
+
+func TestStashEvictToPathSkipsStickyBlocks(t *testing.T) {
+	stash := Stash[selectableString]{
+		blocks: []StashedBlock[selectableString]{
+			Block[selectableString]{
+				BlockAddress: 1,
+				Leaf:         2,
+				Data:         "evictable",
+				Valid:        1,
+			}.MakeStashedBlock(0),
+			Block[selectableString]{
+				BlockAddress: 2,
+				Leaf:         2,
+				Data:         "sticky",
+				Valid:        1,
+			}.MakeStashedBlock(1),
+		},
+	}
+
+	path := stash.EvictToPath(2, 3, 1)
+
+	if path[2][0].BlockAddress != 1 || path[2][0].Data != "evictable" {
+		t.Fatalf("leaf bucket = %+v, want evictable block", path[2][0])
+	}
+	if stash.blocks[0].Block.Valid != 0 {
+		t.Fatal("evicted block remains valid in stash")
+	}
+	if stash.blocks[1].Block.Valid != 1 || stash.blocks[1].Sticky != 1 {
+		t.Fatalf("sticky block changed: %+v", stash.blocks[1])
+	}
+}
+
+func TestStashEvictToPathOnlyPlacesCompatibleBlocks(t *testing.T) {
+	stash := Stash[selectableString]{
+		blocks: []StashedBlock[selectableString]{
+			Block[selectableString]{
+				BlockAddress: 1,
+				Leaf:         2,
+				Data:         "same leaf",
+				Valid:        1,
+			}.MakeStashedBlock(0),
+			Block[selectableString]{
+				BlockAddress: 2,
+				Leaf:         0,
+				Data:         "other branch",
+				Valid:        1,
+			}.MakeStashedBlock(0),
+		},
+	}
+
+	path := stash.EvictToPath(2, 3, 1)
+
+	if path[2][0].BlockAddress != 1 {
+		t.Fatalf("leaf block address = %d, want 1", path[2][0].BlockAddress)
+	}
+	if path[1][0].Valid != 0 {
+		t.Fatalf("incompatible block was placed below root: %+v", path[1][0])
+	}
+	if path[0][0].BlockAddress != 2 {
+		t.Fatalf("root block address = %d, want 2", path[0][0].BlockAddress)
 	}
 }

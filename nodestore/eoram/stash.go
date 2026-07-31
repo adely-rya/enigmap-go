@@ -29,13 +29,14 @@ func (block Block[T]) MakeStashedBlock(sticky int) StashedBlock[T] {
 func (stash *Stash[T]) Put(block Block[T]) int {
 	exists := 0
 
+	//同じブロックがスタッシュにあるかの判定
 	for index := 0; index < len(stash.blocks); index++ {
 		current := stash.blocks[index]
 		exists |= block.Valid &
 			current.Block.Valid &
 			utils.CtEqUint64(
-				uint64(current.Block.Address),
-				uint64(block.Address),
+				uint64(current.Block.BlockAddress),
+				uint64(block.BlockAddress),
 			)
 	}
 
@@ -45,9 +46,9 @@ func (stash *Stash[T]) Put(block Block[T]) int {
 		current := stash.blocks[index]
 
 		match := current.Block.Valid & utils.CtEqUint64(
-			uint64(current.Block.Address),
-			uint64(block.Address),
-		)
+			uint64(current.Block.BlockAddress),
+			uint64(block.BlockAddress),
+		) //同じアドレスでエントリーがリアルか判定
 		update := exists & match
 		free := utils.CtNot(current.Block.Valid)
 		take := block.Valid &
@@ -71,6 +72,163 @@ func (stash *Stash[T]) Put(block Block[T]) int {
 	return utils.CtNot(block.Valid) | written
 }
 
+// PutPinned adds a block to the stash and pins it against eviction.
+func (stash *Stash[T]) PutPinned(block Block[T]) int {
+	if stash.Put(block) == 0 {
+		return 0
+	}
+
+	found := 0
+	for index := 0; index < len(stash.blocks); index++ {
+		entry := stash.blocks[index]
+		match := entry.Block.Valid &
+			utils.CtEqUint64(
+				uint64(entry.Block.BlockAddress),
+				uint64(block.BlockAddress),
+			) &
+			utils.CtNot(found)
+
+		entry.Sticky = subtle.ConstantTimeSelect(match, 1, entry.Sticky)
+		stash.blocks[index] = entry
+		found |= match
+	}
+
+	return found
+}
+
+func (stash *Stash[T]) Get(blockAddress BlockAddress) (T, int) {
+	var out T
+	found := 0
+
+	for index := 0; index < len(stash.blocks); index++ {
+		block := stash.blocks[index].Block
+
+		match := block.Valid &
+			utils.CtEqUint64(
+				uint64(block.BlockAddress),
+				uint64(blockAddress),
+			) &
+			utils.CtNot(found)
+
+		out = core.Select(out, block.Data, match)
+		found |= match
+	}
+
+	return out, found
+}
+
+// PrepareAccess returns the requested block while assigning it to newLeaf
+// and pinning it in the stash until FinishAccess completes.
+func (stash *Stash[T]) PrepareAccess(
+	blockAddress BlockAddress,
+	newLeaf Leaf,
+) (T, int) {
+	value, found := stash.Get(blockAddress)
+	selected := 0
+
+	for index := 0; index < len(stash.blocks); index++ {
+		entry := stash.blocks[index]
+		match := entry.Block.Valid &
+			utils.CtEqUint64(
+				uint64(entry.Block.BlockAddress),
+				uint64(blockAddress),
+			) &
+			utils.CtNot(selected)
+
+		entry.Block.Leaf = Leaf(utils.CtSelect64(
+			match,
+			uint64(newLeaf),
+			uint64(entry.Block.Leaf),
+		))
+		entry.Sticky = subtle.ConstantTimeSelect(match, 1, entry.Sticky)
+		stash.blocks[index] = entry
+		selected |= match
+	}
+
+	return value, found
+}
+
+// UpdateAccessedBlock replaces the payload of one valid stash entry.
+func (stash *Stash[T]) UpdateAccessedBlock(
+	blockAddress BlockAddress,
+	data T,
+) int {
+	updated := 0
+
+	for index := 0; index < len(stash.blocks); index++ {
+		entry := stash.blocks[index]
+		match := entry.Block.Valid &
+			utils.CtEqUint64(
+				uint64(entry.Block.BlockAddress),
+				uint64(blockAddress),
+			) &
+			utils.CtNot(updated)
+
+		entry.Block.Data = core.Select(entry.Block.Data, data, match)
+		stash.blocks[index] = entry
+		updated |= match
+	}
+
+	return updated
+}
+
+// Unpin makes one valid stash entry eligible for a later eviction.
+func (stash *Stash[T]) Unpin(blockAddress BlockAddress) int {
+	found := 0
+
+	for index := 0; index < len(stash.blocks); index++ {
+		entry := stash.blocks[index]
+		match := entry.Block.Valid &
+			utils.CtEqUint64(
+				uint64(entry.Block.BlockAddress),
+				uint64(blockAddress),
+			) &
+			utils.CtNot(found)
+
+		entry.Sticky = subtle.ConstantTimeSelect(match, 0, entry.Sticky)
+		stash.blocks[index] = entry
+		found |= match
+	}
+
+	return found
+}
+
+// UnpinAll makes every stash entry eligible for later eviction.
+func (stash *Stash[T]) UnpinAll() {
+	for index := 0; index < len(stash.blocks); index++ {
+		stash.blocks[index].Sticky = 0
+	}
+}
+
+// FreeMaybe clears one valid block when condition is 1. The stash is fully
+// scanned regardless of condition and block location.
+func (stash *Stash[T]) FreeMaybe(
+	blockAddress BlockAddress,
+	condition int,
+) int {
+	condition &= 1
+	found := 0
+	var empty Block[T]
+
+	for index := 0; index < len(stash.blocks); index++ {
+		entry := stash.blocks[index]
+		match := entry.Block.Valid &
+			utils.CtEqUint64(
+				uint64(entry.Block.BlockAddress),
+				uint64(blockAddress),
+			) &
+			utils.CtNot(found)
+		free := match & condition
+
+		entry.Block = entry.Block.Select(empty, free)
+		entry.Sticky = subtle.ConstantTimeSelect(free, 0, entry.Sticky)
+		stash.blocks[index] = entry
+		found |= match
+	}
+
+	return found
+}
+
 func (stash *Stash[T]) AddPath(path []Bucket[T], bucketSize int) int {
 	ok := 1
 
@@ -85,4 +243,66 @@ func (stash *Stash[T]) AddPath(path []Bucket[T], bucketSize int) int {
 	}
 
 	return ok
+}
+
+// EvictToPath greedily fills a root-to-leaf path from the deepest bucket.
+// Sticky entries remain in the stash even when their position is on the path.
+func (stash *Stash[T]) EvictToPath(
+	leaf Leaf,
+	pathLength int,
+	bucketSize int,
+) []Bucket[T] {
+	path := make([]Bucket[T], pathLength)
+	blocks := make([]Block[T], pathLength*bucketSize)
+	used := make([]int, bucketSize)
+
+	for depth := 0; depth < pathLength; depth++ {
+		start := depth * bucketSize
+		path[depth] = blocks[start : start+bucketSize]
+	}
+
+	for depth := pathLength - 1; depth >= 0; depth-- {
+		shift := uint(pathLength - 1 - depth)
+		isRoot := utils.CtEqUint64(uint64(depth), 0)
+
+		for slot := 0; slot < bucketSize; slot++ {
+			used[slot] = 0
+		} //空のroot→leaf pathを作る
+
+		for index := 0; index < len(stash.blocks); index++ {
+			current := stash.blocks[index]
+
+			blockLeaf := uint64(current.Block.Leaf)
+			prefixMatch := utils.CtEqUint64(
+				blockLeaf>>shift,
+				uint64(leaf)>>shift,
+			)
+			onPath := isRoot | (utils.CtNot(isRoot) & prefixMatch)
+
+			eligible := current.Block.Valid & utils.CtNot(current.Sticky) & onPath
+			placed := 0
+
+			for slot := 0; slot < bucketSize; slot++ {
+				free := utils.CtNot(used[slot])
+				take := eligible & utils.CtNot(placed) & free
+
+				path[depth][slot] = path[depth][slot].Select(
+					current.Block,
+					take,
+				)
+
+				used[slot] |= take
+				placed |= take
+			}
+
+			current.Block.Valid = subtle.ConstantTimeSelect(
+				placed,
+				0,
+				current.Block.Valid,
+			)
+			stash.blocks[index] = current
+		}
+	}
+
+	return path
 }
