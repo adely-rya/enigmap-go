@@ -39,3 +39,62 @@ func TestNewOramClientUsesDefaultBucketSize(t *testing.T) {
 		)
 	}
 }
+
+func TestClientOperationStubsPanic(t *testing.T) {
+	store := storage.NewMemoryStorage[Bucket[selectableString]](7)
+	client := NewOramClient[selectableString](store, 5)
+
+	tests := []struct {
+		name string
+		call func()
+	}{
+		{
+			name: "NewPosition",
+			call: func() {
+				_, _ = client.NewPosition()
+			},
+		},
+		{
+			name: "BeginAccess",
+			call: func() {
+				_, _ = client.BeginAccess(1, 2, 3, 1)
+			},
+		},
+		{
+			name: "FinishAccess",
+			call: func() {
+				_ = client.FinishAccess(1, "value", 1)
+			},
+		},
+		{
+			name: "Allocate",
+			call: func() {
+				_, _ = client.Allocate("value", 3)
+			},
+		},
+		{
+			name: "FreeMaybe",
+			call: func() {
+				_ = client.FreeMaybe(1, 1)
+			},
+		},
+		{
+			name: "UncacheAll",
+			call: func() {
+				client.UncacheAll()
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			defer func() {
+				if recover() == nil {
+					t.Fatal("operation did not panic")
+				}
+			}()
+
+			test.call()
+		})
+	}
+}

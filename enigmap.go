@@ -23,8 +23,8 @@ func NewMemory[V any](
 
 // NewORAM prepares an ORAM-backed map.
 //
-// The final AVL connection remains disabled until eoram.Client implements
-// avl.NodeStore.
+// The final AVL connection remains disabled until the eoram NodeStore adapter
+// is implemented.
 func NewORAM[T core.Selectable[T]](
 	storage core.IO[eoram.Bucket[T]],
 	maxNodes uint64,
@@ -32,7 +32,8 @@ func NewORAM[T core.Selectable[T]](
 ) (omap.Store[T], error) {
 	client := eoram.NewOramClient(storage, bucketSize)
 
-	// return avl.NewTree[T](client, maxNodes)
+	// nodeStore := eoram.NewStore(client)
+	// return avl.NewTree[T](nodeStore, maxNodes)
 	_ = client
 	_ = maxNodes
 
