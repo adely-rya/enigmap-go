@@ -88,7 +88,7 @@ paddingし、overwriteの場合も第2パスを省略しない。
 5. `NodeStore`をBegin/Finish型へ変更する。
 6. memory NodeStoreを新APIへ移行する。
 7. Get、第1 Putパス、第2 Putパスの順にposition更新を組み込む。
-8. adapter/eoram、stash cached状態、Large Bucket cacheを接続する。
+8. `nodestore/eoram`へstash cached状態とLarge Bucket cacheを接続する。
 
 1〜7は`feature/oram-pointer-foundations`で実施する。memory NodeStoreではposition生成と
 `UncacheAll`をno-opとし、Begin/Finishをmapのread/writeへ接続する。8は後続変更とする。
