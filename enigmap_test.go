@@ -22,7 +22,7 @@ func (value selectableValue) Select(
 }
 
 func TestNewORAMReportsMissingNodeStore(t *testing.T) {
-	store := storage.NewMemoryStorage[eoram.Bucket[selectableValue]](7)
+	store := storage.NewMemoryStorage[eoram.Bucket[eoram.NodeBlock[selectableValue]]](7)
 
 	got, err := NewORAM[selectableValue](store, 3, 5)
 

@@ -3,15 +3,22 @@ package eoram
 import (
 	cryptoRand "crypto/rand"
 	"encoding/binary"
+	"errors"
 	"io"
 	"math"
 
+	"github.com/adely-rya/enigmap-go/avl"
 	"github.com/adely-rya/oram/core"
 )
 
 const (
 	defaultBucketSize = 5
 	securityBits      = 128
+)
+
+var ErrStashOverflow = errors.New("eoram: stash overflow")
+var ErrBeginAccessIncomplete = errors.New(
+	"eoram: BeginAccess block lookup is not implemented",
 )
 
 type accessPhase uint8
@@ -33,8 +40,8 @@ type accessState struct {
 //
 // T is the selectable payload stored in each ORAM block.
 type Client[T core.Selectable[T]] struct {
-	server OramServer[Bucket[T], core.IO[Bucket[T]]]
-	stash  Stash[T]
+	server OramServer[Bucket[NodeBlock[T]], core.IO[Bucket[NodeBlock[T]]]]
+	stash  Stash[NodeBlock[T]]
 	random io.Reader
 
 	bucketSize    int
@@ -44,7 +51,7 @@ type Client[T core.Selectable[T]] struct {
 
 // NewOramClient creates an ENIGMAP Path ORAM client backed by server.
 func NewOramClient[T core.Selectable[T]](
-	storage core.IO[Bucket[T]],
+	storage core.IO[Bucket[NodeBlock[T]]],
 	bucketSize int,
 ) (*Client[T], error) {
 	if bucketSize <= 0 {
@@ -62,8 +69,10 @@ func NewOramClient[T core.Selectable[T]](
 	))
 
 	return &Client[T]{
-		server:     server,
-		stash:      Stash[T]{blocks: make([]StashedBlock[T], stashSize)},
+		server: server,
+		stash: Stash[NodeBlock[T]]{
+			blocks: make([]StashedBlock[NodeBlock[T]], stashSize),
+		},
 		random:     cryptoRand.Reader,
 		bucketSize: bucketSize,
 		access: accessState{
@@ -72,53 +81,68 @@ func NewOramClient[T core.Selectable[T]](
 	}, nil
 }
 
-// NewPosition generates a new leaf position for an ORAM block.
-func (client *Client[T]) NewPosition() (Position, error) {
+// ランダムにリーフを選定する
+func (client *Client[T]) NewPosition() (avl.ORAMPosition, error) {
 	var randomBytes [8]byte
 	if _, err := io.ReadFull(client.random, randomBytes[:]); err != nil {
 		return 0, err
 	}
 
 	randomValue := binary.LittleEndian.Uint64(randomBytes[:])
-	return Position(randomValue & (client.server.LeafCount() - 1)), nil
+	return avl.ORAMPosition(
+		randomValue & (client.server.LeafCount() - 1),
+	), nil
 }
 
-// BeginAccess reads the path at oldPosition into the stash and moves the
-// requested block to newPosition. sticky controls whether eviction must retain
-// the block in the stash.
+// BeginAccess starts one AVL node access.
 func (client *Client[T]) BeginAccess(
-	address Address,
-	oldPosition Position,
-	newPosition Position,
-	sticky int,
-) (T, error) {
-	panic("eoram: Client.BeginAccess is not implemented")
+	pointer avl.Pointer,
+	newPosition avl.ORAMPosition,
+) (avl.Node[T], avl.AccessToken, error) {
+	var zerovalue avl.Node[T]
+	var zeroID avl.AccessToken
+
+	leaf := Position(pointer.Position)
+	path, err := client.server.ReadPath(leaf)
+	if err != nil {
+		return zerovalue, zeroID, err
+	}
+
+	if client.stash.AddPath(path, client.bucketSize) == 0 {
+		return zerovalue, zeroID, ErrStashOverflow
+	}
+
+	return zerovalue, zeroID, ErrBeginAccessIncomplete
 }
 
-// FinishAccess updates the accessed stash block and evicts the path opened by
-// BeginAccess. markUncached controls whether the block becomes evictable.
+// FinishAccess updates the AVL node opened by BeginAccess.
 func (client *Client[T]) FinishAccess(
-	address Address,
-	data T,
-	markUncached int,
+	token avl.AccessToken,
+	node avl.Node[T],
 ) error {
 	panic("eoram: Client.FinishAccess is not implemented")
 }
 
-// Allocate places a new logical block in the stash at position.
+// Allocate creates one pointer-addressed AVL node block.
 func (client *Client[T]) Allocate(
-	data T,
-	position Position,
-) (Address, error) {
+	node avl.Node[T],
+) (avl.Pointer, error) {
 	panic("eoram: Client.Allocate is not implemented")
 }
 
-// FreeMaybe releases address when condition is 1.
-func (client *Client[T]) FreeMaybe(address Address, condition int) error {
+// FreeMaybe conditionally releases an AVL node pointer.
+func (client *Client[T]) FreeMaybe(
+	pointer avl.Pointer,
+	condition int,
+) error {
 	panic("eoram: Client.FreeMaybe is not implemented")
 }
 
 // UncacheAll marks every sticky stash block as eligible for eviction.
 func (client *Client[T]) UncacheAll() {
 	panic("eoram: Client.UncacheAll is not implemented")
+}
+
+func assertNodeStore[T core.Selectable[T]]() {
+	var _ avl.NodeStore[T] = (*Client[T])(nil)
 }

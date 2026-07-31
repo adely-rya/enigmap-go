@@ -68,6 +68,11 @@ type NodeStore[V any] interface {
 メモリNodeStoreも同じAPIを実装し、positionとevictionだけをno-opにする。これにより、
 Get/Putの制御フローと固定access scheduleをバックエンド間で共通化する。
 
+`nodestore/eoram.Client[V]`自身がこの`NodeStore[V]`を実装する。別のStore adapterは
+設けない。stashのsticky状態や`markUncached`はAVLへ公開せず、`BeginAccess`と
+`FinishAccess`の内部で直接管理する。別のbegin/finish block helperは設けない。
+`Allocate`と`FreeMaybe`についても同様に、Clientの公開メソッドへ直接実装する。
+
 ## Putの二種類の分割
 
 Putには異なる粒度の二つの分割がある。

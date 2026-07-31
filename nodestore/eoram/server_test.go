@@ -39,3 +39,43 @@ func TestNewOramServerRejectsInvalidTreeSize(t *testing.T) {
 		}
 	}
 }
+
+func TestOramServerReadPathReturnsRootToLeaf(t *testing.T) {
+	store := storage.NewMemoryStorage[int](7)
+	for index := uint64(0); index < store.Size(); index++ {
+		if err := store.Write(int(index), index); err != nil {
+			t.Fatalf("write index %d: %v", index, err)
+		}
+	}
+
+	server, err := NewOramServer(store)
+	if err != nil {
+		t.Fatalf("NewOramServer: %v", err)
+	}
+
+	path, err := server.ReadPath(2)
+	if err != nil {
+		t.Fatalf("ReadPath: %v", err)
+	}
+	want := []int{0, 2, 5}
+	if len(path) != len(want) {
+		t.Fatalf("path length = %d, want %d", len(path), len(want))
+	}
+	for index := range want {
+		if path[index] != want[index] {
+			t.Fatalf("path[%d] = %d, want %d", index, path[index], want[index])
+		}
+	}
+}
+
+func TestOramServerReadPathRejectsInvalidPosition(t *testing.T) {
+	store := storage.NewMemoryStorage[int](7)
+	server, err := NewOramServer(store)
+	if err != nil {
+		t.Fatalf("NewOramServer: %v", err)
+	}
+
+	if _, err := server.ReadPath(4); err == nil {
+		t.Fatal("ReadPath accepted out-of-range position")
+	}
+}

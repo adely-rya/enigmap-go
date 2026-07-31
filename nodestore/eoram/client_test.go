@@ -6,11 +6,12 @@ import (
 	"io"
 	"testing"
 
+	"github.com/adely-rya/enigmap-go/avl"
 	"github.com/adely-rya/oram/storage"
 )
 
 func TestNewOramClient(t *testing.T) {
-	store := storage.NewMemoryStorage[Bucket[selectableString]](7)
+	store := storage.NewMemoryStorage[Bucket[NodeBlock[selectableString]]](7)
 
 	client, err := NewOramClient[selectableString](store, 3)
 	if err != nil {
@@ -32,7 +33,7 @@ func TestNewOramClient(t *testing.T) {
 }
 
 func TestNewOramClientUsesDefaultBucketSize(t *testing.T) {
-	store := storage.NewMemoryStorage[Bucket[selectableString]](7)
+	store := storage.NewMemoryStorage[Bucket[NodeBlock[selectableString]]](7)
 
 	client, err := NewOramClient[selectableString](store, 0)
 	if err != nil {
@@ -49,7 +50,7 @@ func TestNewOramClientUsesDefaultBucketSize(t *testing.T) {
 }
 
 func TestClientOperationStubsPanic(t *testing.T) {
-	store := storage.NewMemoryStorage[Bucket[selectableString]](7)
+	store := storage.NewMemoryStorage[Bucket[NodeBlock[selectableString]]](7)
 	client, err := NewOramClient[selectableString](store, 5)
 	if err != nil {
 		t.Fatalf("NewOramClient: %v", err)
@@ -60,27 +61,26 @@ func TestClientOperationStubsPanic(t *testing.T) {
 		call func()
 	}{
 		{
-			name: "BeginAccess",
-			call: func() {
-				_, _ = client.BeginAccess(1, 2, 3, 1)
-			},
-		},
-		{
 			name: "FinishAccess",
 			call: func() {
-				_ = client.FinishAccess(1, "value", 1)
+				_ = client.FinishAccess(
+					avl.AccessToken{Address: 1},
+					avl.Node[selectableString]{Value: "value"},
+				)
 			},
 		},
 		{
 			name: "Allocate",
 			call: func() {
-				_, _ = client.Allocate("value", 3)
+				_, _ = client.Allocate(
+					avl.Node[selectableString]{Value: "value"},
+				)
 			},
 		},
 		{
 			name: "FreeMaybe",
 			call: func() {
-				_ = client.FreeMaybe(1, 1)
+				_ = client.FreeMaybe(avl.Pointer{Address: 1}, 1)
 			},
 		},
 		{
@@ -104,8 +104,69 @@ func TestClientOperationStubsPanic(t *testing.T) {
 	}
 }
 
+func TestClientBeginAccessAddsPathToStash(t *testing.T) {
+	store := storage.NewMemoryStorage[Bucket[NodeBlock[selectableString]]](7)
+	dummyBucket := Bucket[NodeBlock[selectableString]]{{}}
+	for index := uint64(0); index < store.Size(); index++ {
+		if err := store.Write(dummyBucket, index); err != nil {
+			t.Fatalf("write dummy bucket %d: %v", index, err)
+		}
+	}
+
+	target := Block[NodeBlock[selectableString]]{
+		Address:  7,
+		Position: 0,
+		Data: NodeBlock[selectableString]{
+			Node: avl.Node[selectableString]{Value: "target"},
+		},
+		Valid: 1,
+	}
+	if err := store.Write(
+		Bucket[NodeBlock[selectableString]]{target},
+		3,
+	); err != nil {
+		t.Fatalf("write target bucket: %v", err)
+	}
+
+	client, err := NewOramClient[selectableString](store, 1)
+	if err != nil {
+		t.Fatalf("NewOramClient: %v", err)
+	}
+
+	_, _, err = client.BeginAccess(
+		avl.Pointer{Address: 7, Position: 0},
+		1,
+	)
+	if !errors.Is(err, ErrBeginAccessIncomplete) {
+		t.Fatalf(
+			"BeginAccess error = %v, want %v",
+			err,
+			ErrBeginAccessIncomplete,
+		)
+	}
+
+	found := false
+	for _, entry := range client.stash.blocks {
+		if entry.Block.Valid == 1 && entry.Block.Address == 7 {
+			found = true
+			if entry.Block.Data.Node.Value != "target" {
+				t.Fatalf(
+					"stashed value = %q, want target",
+					entry.Block.Data.Node.Value,
+				)
+			}
+			if entry.Sticky != 0 {
+				t.Fatalf("path block Sticky = %d, want 0", entry.Sticky)
+			}
+		}
+	}
+	if !found {
+		t.Fatal("target block was not added to stash")
+	}
+}
+
 func TestClientNewPositionUsesServerLeafCount(t *testing.T) {
-	store := storage.NewMemoryStorage[Bucket[selectableString]](7)
+	store := storage.NewMemoryStorage[Bucket[NodeBlock[selectableString]]](7)
 	client, err := NewOramClient[selectableString](store, 5)
 	if err != nil {
 		t.Fatalf("NewOramClient: %v", err)
@@ -125,7 +186,7 @@ func TestClientNewPositionUsesServerLeafCount(t *testing.T) {
 }
 
 func TestClientNewPositionPropagatesRandomError(t *testing.T) {
-	store := storage.NewMemoryStorage[Bucket[selectableString]](7)
+	store := storage.NewMemoryStorage[Bucket[NodeBlock[selectableString]]](7)
 	client, err := NewOramClient[selectableString](store, 5)
 	if err != nil {
 		t.Fatalf("NewOramClient: %v", err)
