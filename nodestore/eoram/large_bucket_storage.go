@@ -3,6 +3,7 @@ package eoram
 import (
 	"container/list"
 	"fmt"
+	"time"
 
 	"github.com/adely-rya/oram/core"
 )
@@ -16,6 +17,19 @@ type LargeBucketStorage[T core.Selectable[T]] struct {
 	cacheCapacity int
 	cacheEntries  map[uint64]*list.Element
 	recency       list.List
+	stats         LargeBucketCacheStats
+}
+
+type LargeBucketCacheStats struct {
+	Hits             uint64
+	Misses           uint64
+	BackingReads     uint64
+	BackingWrites    uint64
+	DirtyEvictions   uint64
+	CleanEvictions   uint64
+	FlushWrites      uint64
+	BackingReadTime  time.Duration
+	BackingWriteTime time.Duration
 }
 
 type largeBucketCacheEntry[T core.Selectable[T]] struct {
@@ -136,9 +150,14 @@ func (storage *LargeBucketStorage[T]) WriteBatch(buckets []Bucket[T], indices []
 			value[update.innerIndex] = cloneBucket(update.bucket)
 		}
 		if !cached {
+			started := time.Now()
 			if err := storage.storage.Write(value, physicalIndex); err != nil {
+				storage.stats.BackingWriteTime += time.Since(started)
+				storage.stats.BackingWrites++
 				return err
 			}
+			storage.stats.BackingWriteTime += time.Since(started)
+			storage.stats.BackingWrites++
 			continue
 		}
 		entry.value = value
@@ -159,12 +178,17 @@ func (storage *LargeBucketStorage[T]) loadEntry(
 	physicalIndex uint64,
 ) (*largeBucketCacheEntry[T], bool, error) {
 	if element, ok := storage.cacheEntries[physicalIndex]; ok {
+		storage.stats.Hits++
 		storage.recency.MoveToFront(element)
 		entry := element.Value.(*largeBucketCacheEntry[T])
 		return entry, true, nil
 	}
 
+	storage.stats.Misses++
+	started := time.Now()
 	largeBucket, err := storage.storage.Read(physicalIndex)
+	storage.stats.BackingReadTime += time.Since(started)
+	storage.stats.BackingReads++
 	if err != nil {
 		return nil, false, err
 	}
@@ -203,9 +227,17 @@ func (storage *LargeBucketStorage[T]) evictLRU() error {
 	}
 	entry := victim.Value.(*largeBucketCacheEntry[T])
 	if entry.dirty {
+		started := time.Now()
 		if err := storage.storage.Write(entry.value, entry.physicalIndex); err != nil {
+			storage.stats.BackingWriteTime += time.Since(started)
+			storage.stats.BackingWrites++
 			return err
 		}
+		storage.stats.BackingWriteTime += time.Since(started)
+		storage.stats.BackingWrites++
+		storage.stats.DirtyEvictions++
+	} else {
+		storage.stats.CleanEvictions++
 	}
 	delete(storage.cacheEntries, entry.physicalIndex)
 	storage.recency.Remove(victim)
@@ -224,12 +256,22 @@ func (storage *LargeBucketStorage[T]) Flush() error {
 		if !entry.dirty {
 			continue
 		}
+		started := time.Now()
 		if err := storage.storage.Write(entry.value, entry.physicalIndex); err != nil {
+			storage.stats.BackingWriteTime += time.Since(started)
+			storage.stats.BackingWrites++
 			return err
 		}
+		storage.stats.BackingWriteTime += time.Since(started)
+		storage.stats.BackingWrites++
+		storage.stats.FlushWrites++
 		entry.dirty = false
 	}
 	return nil
+}
+
+func (storage *LargeBucketStorage[T]) Stats() LargeBucketCacheStats {
+	return storage.stats
 }
 
 // FlushAndClear persists dirty entries and removes all cached plaintext.

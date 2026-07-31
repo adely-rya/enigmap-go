@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"time"
 
 	"github.com/adely-rya/enigmap-go/avl"
 	"github.com/adely-rya/oram/core"
@@ -50,12 +51,36 @@ type Client[T core.Selectable[T]] struct {
 	bucketSize    int
 	nextFreeBlock BlockAddress
 	access        accessState
+	stats         ClientStats
+}
+
+type ClientStats struct {
+	Accesses          uint64
+	ReadPathTime      time.Duration
+	AddPathTime       time.Duration
+	PrepareAccessTime time.Duration
+	UpdateBlockTime   time.Duration
+	EvictToPathTime   time.Duration
+	WritePathTime     time.Duration
+	UnpinTime         time.Duration
 }
 
 // NewOramClient creates an ENIGMAP Path ORAM client backed by server.
 func NewOramClient[T core.Selectable[T]](
 	storage core.IO[Bucket[NodeBlock[T]]],
 	bucketSize int,
+) (*Client[T], error) {
+	stashSize := int(math.Ceil(
+		(float64(securityBits) + math.Log2(14.0)) /
+			(-math.Log2(0.6002)),
+	))
+	return NewOramClientWithStashSize(storage, bucketSize, stashSize)
+}
+
+func NewOramClientWithStashSize[T core.Selectable[T]](
+	storage core.IO[Bucket[NodeBlock[T]]],
+	bucketSize int,
+	stashSize int,
 ) (*Client[T], error) {
 	if bucketSize <= 0 {
 		bucketSize = defaultBucketSize
@@ -66,10 +91,9 @@ func NewOramClient[T core.Selectable[T]](
 		return nil, err
 	}
 
-	stashSize := int(math.Ceil(
-		(float64(securityBits) + math.Log2(14.0)) /
-			(-math.Log2(0.6002)),
-	))
+	if stashSize <= 0 {
+		return nil, fmt.Errorf("eoram: stash size must be positive: %d", stashSize)
+	}
 
 	client := &Client[T]{
 		server: server,
@@ -113,20 +137,27 @@ func (client *Client[T]) BeginAccess(pointer avl.Pointer, newLeaf avl.ORAMPositi
 	}
 
 	oldLeaf := Leaf(pointer.Position)
+	started := time.Now()
 	path, err := client.server.ReadPath(oldLeaf)
+	client.stats.ReadPathTime += time.Since(started)
 	if err != nil {
 		return zeroNode, zeroToken, err
 	}
 
-	if client.stash.AddPath(path, client.bucketSize) == 0 {
+	started = time.Now()
+	added := client.stash.AddPath(path, client.bucketSize)
+	client.stats.AddPathTime += time.Since(started)
+	if added == 0 {
 		return zeroNode, zeroToken, ErrStashOverflow
 	}
 
 	blockAddress := BlockAddress(pointer.Address)
+	started = time.Now()
 	value, found := client.stash.PrepareAccess(
 		blockAddress,
 		Leaf(newLeaf),
 	)
+	client.stats.PrepareAccessTime += time.Since(started)
 
 	if found == 0 {
 		return zeroNode, zeroToken, fmt.Errorf(
@@ -144,6 +175,7 @@ func (client *Client[T]) BeginAccess(pointer avl.Pointer, newLeaf avl.ORAMPositi
 		newLeaf:      Leaf(newLeaf),
 		pathLength:   len(path),
 	}
+	client.stats.Accesses++
 
 	return value.Node, avl.AccessToken{Address: pointer.Address}, nil
 }
@@ -155,10 +187,13 @@ func (client *Client[T]) FinishAccess(token avl.AccessToken, node avl.Node[T]) e
 		return err
 	}
 
-	if client.stash.UpdateAccessedBlock(
+	started := time.Now()
+	updated := client.stash.UpdateAccessedBlock(
 		client.access.blockAddress,
 		NodeBlock[T]{Node: node},
-	) == 0 {
+	)
+	client.stats.UpdateBlockTime += time.Since(started)
+	if updated == 0 {
 		return fmt.Errorf(
 			"%w: FinishAccess blockAddress=%d",
 			ErrBlockNotFound,
@@ -166,16 +201,24 @@ func (client *Client[T]) FinishAccess(token avl.AccessToken, node avl.Node[T]) e
 		)
 	}
 
+	started = time.Now()
 	path := client.stash.EvictToPath(
 		client.access.oldLeaf,
 		client.access.pathLength,
 		client.bucketSize,
 	)
+	client.stats.EvictToPathTime += time.Since(started)
+	started = time.Now()
 	if err := client.server.WritePath(path, client.access.oldLeaf); err != nil {
+		client.stats.WritePathTime += time.Since(started)
 		return err
 	}
+	client.stats.WritePathTime += time.Since(started)
 
-	if client.stash.Unpin(client.access.blockAddress) == 0 {
+	started = time.Now()
+	unpinned := client.stash.Unpin(client.access.blockAddress)
+	client.stats.UnpinTime += time.Since(started)
+	if unpinned == 0 {
 		return fmt.Errorf(
 			"%w: FinishAccess unpin blockAddress=%d",
 			ErrBlockNotFound,
@@ -186,6 +229,8 @@ func (client *Client[T]) FinishAccess(token avl.AccessToken, node avl.Node[T]) e
 
 	return nil
 }
+
+func (client *Client[T]) Stats() ClientStats { return client.stats }
 
 func (client *Client[T]) validateFinishAccess(token avl.AccessToken) error {
 	if client.access.phase != accessOpen {

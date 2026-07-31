@@ -29,6 +29,7 @@ type ORAMMap[T ORAMValue[T]] struct {
 	*avl.Tree[T]
 	file             *storage.FileStorage[encrypt.Ciphertext[eoram.LargeBucket[eoram.NodeBlock[T]]]]
 	largeBucketStore *eoram.LargeBucketStorage[eoram.NodeBlock[T]]
+	client           *eoram.Client[T]
 }
 
 func (store *ORAMMap[T]) Close() error {
@@ -42,6 +43,30 @@ func NewORAM[T ORAMValue[T]](
 	filePath string,
 	maxNodes uint64,
 	key []byte,
+) (*ORAMMap[T], error) {
+	return NewORAMWithCacheCapacity[T](
+		filePath,
+		maxNodes,
+		key,
+		eoram.DefaultLargeBucketCacheCapacity,
+	)
+}
+
+func NewORAMWithCacheCapacity[T ORAMValue[T]](
+	filePath string,
+	maxNodes uint64,
+	key []byte,
+	cacheCapacity int,
+) (*ORAMMap[T], error) {
+	return newORAMWithParameters[T](filePath, maxNodes, key, cacheCapacity, 0)
+}
+
+func newORAMWithParameters[T ORAMValue[T]](
+	filePath string,
+	maxNodes uint64,
+	key []byte,
+	cacheCapacity int,
+	stashSize int,
 ) (*ORAMMap[T], error) {
 	requiredLeaves := maxNodes + 2
 	if requiredLeaves < maxNodes {
@@ -82,14 +107,23 @@ func NewORAM[T ORAMValue[T]](
 	largeBucketStorage, err := eoram.NewLargeBucketStorage[eoram.NodeBlock[T]](
 		encryptedStorage,
 		layout,
-		eoram.DefaultLargeBucketCacheCapacity,
+		cacheCapacity,
 	)
 	if err != nil {
 		_ = file.Close()
 		return nil, err
 	}
 
-	client, err := eoram.NewOramClient[T](largeBucketStorage, eoram.BucketSize)
+	var client *eoram.Client[T]
+	if stashSize > 0 {
+		client, err = eoram.NewOramClientWithStashSize[T](
+			largeBucketStorage,
+			eoram.BucketSize,
+			stashSize,
+		)
+	} else {
+		client, err = eoram.NewOramClient[T](largeBucketStorage, eoram.BucketSize)
+	}
 	if err != nil {
 		_ = file.Close()
 		return nil, err
@@ -105,5 +139,29 @@ func NewORAM[T ORAMValue[T]](
 		Tree:             tree,
 		file:             file,
 		largeBucketStore: largeBucketStorage,
+		client:           client,
 	}, nil
+}
+
+// NewORAMForProfile exposes internal sizing parameters for diagnostic runs.
+func NewORAMForProfile[T ORAMValue[T]](
+	filePath string,
+	maxNodes uint64,
+	key []byte,
+	cacheCapacity int,
+	stashSize int,
+) (*ORAMMap[T], error) {
+	return newORAMWithParameters[T](filePath, maxNodes, key, cacheCapacity, stashSize)
+}
+
+type ORAMStats struct {
+	Client eoram.ClientStats
+	Cache  eoram.LargeBucketCacheStats
+}
+
+func (store *ORAMMap[T]) Stats() ORAMStats {
+	return ORAMStats{
+		Client: store.client.Stats(),
+		Cache:  store.largeBucketStore.Stats(),
+	}
 }
