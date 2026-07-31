@@ -36,7 +36,7 @@ type Client[T core.Selectable[T]] struct {
 
 // NewOramClient creates an ENIGMAP Path ORAM client backed by server.
 func NewOramClient[T core.Selectable[T]](
-	server OramServer[Bucket[T], core.IO[Bucket[T]]],
+	storage core.IO[Bucket[T]],
 	bucketSize int,
 ) *Client[T] {
 	if bucketSize <= 0 {
@@ -49,7 +49,7 @@ func NewOramClient[T core.Selectable[T]](
 	))
 
 	return &Client[T]{
-		server:     server,
+		server:     NewOramServer(storage),
 		stash:      Stash[T]{blocks: make([]StashedBlock[T], stashSize)},
 		bucketSize: bucketSize,
 		access: accessState{

@@ -3,21 +3,14 @@ package eoram
 import (
 	"testing"
 
-	"github.com/adely-rya/oram/core"
 	"github.com/adely-rya/oram/oram/pathoram"
 	"github.com/adely-rya/oram/storage"
 )
 
 func TestNewOramClient(t *testing.T) {
 	store := storage.NewMemoryStorage[Bucket[selectableString]](7)
-	server := OramServer[
-		Bucket[selectableString],
-		core.IO[Bucket[selectableString]],
-	]{
-		Storage: store,
-	}
 
-	client := NewOramClient(server, 3)
+	client := NewOramClient[selectableString](store, 3)
 
 	if client.server.Storage != store {
 		t.Fatal("client does not retain server storage")
@@ -35,14 +28,8 @@ func TestNewOramClient(t *testing.T) {
 
 func TestNewOramClientUsesDefaultBucketSize(t *testing.T) {
 	store := storage.NewMemoryStorage[Bucket[selectableString]](7)
-	server := OramServer[
-		Bucket[selectableString],
-		core.IO[Bucket[selectableString]],
-	]{
-		Storage: store,
-	}
 
-	client := NewOramClient(server, 0)
+	client := NewOramClient[selectableString](store, 0)
 
 	if client.bucketSize != pathoram.BUCKET_SIZE {
 		t.Fatalf(
