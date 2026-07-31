@@ -21,7 +21,7 @@ type accessState struct {
 // type stored through OramServer.
 type Client[V any, B any] struct {
 	server OramServer[B]
-	stash  Stash[Block[V]]
+	stash  Stash[V]
 
 	bucketSize    int
 	nextFreeBlock Address
