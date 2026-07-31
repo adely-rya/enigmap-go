@@ -1,6 +1,11 @@
 package eoram
 
-import "github.com/adely-rya/oram/core"
+import (
+	"math"
+
+	"github.com/adely-rya/oram/core"
+	"github.com/adely-rya/oram/oram/pathoram"
+)
 
 type accessPhase uint8
 
@@ -27,4 +32,28 @@ type Client[T core.Selectable[T]] struct {
 	bucketSize    int
 	nextFreeBlock Address
 	access        accessState
+}
+
+// NewOramClient creates an ENIGMAP Path ORAM client backed by server.
+func NewOramClient[T core.Selectable[T]](
+	server OramServer[Bucket[T], core.IO[Bucket[T]]],
+	bucketSize int,
+) *Client[T] {
+	if bucketSize <= 0 {
+		bucketSize = pathoram.BUCKET_SIZE
+	}
+
+	stashSize := int(math.Ceil(
+		(float64(pathoram.SECURITY_BITS) + math.Log2(14.0)) /
+			(-math.Log2(0.6002)),
+	))
+
+	return &Client[T]{
+		server:     server,
+		stash:      Stash[T]{blocks: make([]StashedBlock[T], stashSize)},
+		bucketSize: bucketSize,
+		access: accessState{
+			phase: accessReady,
+		},
+	}
 }
