@@ -4,7 +4,11 @@ import (
 	"math"
 
 	"github.com/adely-rya/oram/core"
-	"github.com/adely-rya/oram/oram/pathoram"
+)
+
+const (
+	defaultBucketSize = 5
+	securityBits      = 128
 )
 
 type accessPhase uint8
@@ -40,11 +44,11 @@ func NewOramClient[T core.Selectable[T]](
 	bucketSize int,
 ) *Client[T] {
 	if bucketSize <= 0 {
-		bucketSize = pathoram.BUCKET_SIZE
+		bucketSize = defaultBucketSize
 	}
 
 	stashSize := int(math.Ceil(
-		(float64(pathoram.SECURITY_BITS) + math.Log2(14.0)) /
+		(float64(securityBits) + math.Log2(14.0)) /
 			(-math.Log2(0.6002)),
 	))
 

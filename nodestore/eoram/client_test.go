@@ -3,7 +3,6 @@ package eoram
 import (
 	"testing"
 
-	"github.com/adely-rya/oram/oram/pathoram"
 	"github.com/adely-rya/oram/storage"
 )
 
@@ -31,11 +30,11 @@ func TestNewOramClientUsesDefaultBucketSize(t *testing.T) {
 
 	client := NewOramClient[selectableString](store, 0)
 
-	if client.bucketSize != pathoram.BUCKET_SIZE {
+	if client.bucketSize != defaultBucketSize {
 		t.Fatalf(
 			"bucket size = %d, want %d",
 			client.bucketSize,
-			pathoram.BUCKET_SIZE,
+			defaultBucketSize,
 		)
 	}
 }
