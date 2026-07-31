@@ -23,12 +23,11 @@ type accessState struct {
 
 // Client holds the state required by the ENIGMAP variant of Path ORAM.
 //
-// B is the logical bucket type stored through PathServer. S is the
-// ENIGMAP-specific stash type; keeping it separate lets the implementation add
-// sticky blocks without modifying the reusable ORAM storage boundary.
-type Client[B any, S any] struct {
-	server PathServer[B]
-	stash  S
+// B is the logical bucket type stored through OramServer. T is the stash entry
+// type used by the ENIGMAP-specific stash implementation.
+type Client[B any, T any] struct {
+	server OramServer[B]
+	stash  Stash[T]
 
 	bucketSize    int
 	nextFreeBlock Address
