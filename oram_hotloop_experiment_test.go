@@ -71,3 +71,83 @@ func TestORAMHotLoopExperiment(t *testing.T) {
 		}
 	}
 }
+
+func TestORAMEncryptionExperiment(t *testing.T) {
+	const entries = 1000
+	for _, encrypted := range []bool{true, false} {
+		name := fmt.Sprintf("encrypted-%t", encrypted)
+		t.Run(name, func(t *testing.T) {
+			var store *enigmap.ORAMMap[oramLatencyValue]
+			var err error
+			if encrypted {
+				store, err = enigmap.NewORAMWithCacheCapacity[oramLatencyValue](
+					t.TempDir()+"/oram.db", entries,
+					[]byte("0123456789abcdef0123456789abcdef"), 30,
+				)
+			} else {
+				store, err = enigmap.NewORAMForProfileUnencrypted[oramLatencyValue](
+					t.TempDir()+"/oram.db", entries, 30,
+				)
+			}
+			if err != nil {
+				t.Fatalf("create ORAM: %v", err)
+			}
+
+			started := time.Now()
+			for index := 0; index < entries; index++ {
+				if err := store.Put(oramLatencyKey(index), oramLatencyData("data", index)); err != nil {
+					t.Fatalf("Put(%d): %v", index, err)
+				}
+			}
+			elapsed := time.Since(started)
+			stats := store.Stats()
+			if err := store.Close(); err != nil {
+				t.Fatalf("Close: %v", err)
+			}
+			fmt.Fprintf(os.Stdout,
+				"\nENCRYPTION encrypted=%t put=%s op=%s evict=%s read-path=%s backing-read=%s backing-write=%s reads=%d writes=%d\n",
+				encrypted, elapsed, elapsed/entries, stats.Client.EvictToPathTime,
+				stats.Client.ReadPathTime, stats.Cache.BackingReadTime,
+				stats.Cache.BackingWriteTime, stats.Cache.BackingReads,
+				stats.Cache.BackingWrites,
+			)
+		})
+	}
+}
+
+func TestORAMEvictionModeExperiment(t *testing.T) {
+	for _, entries := range []int{1000, 3000} {
+		for _, nonOblivious := range []bool{false, true} {
+			name := fmt.Sprintf("entries-%d/non-oblivious-%t", entries, nonOblivious)
+			t.Run(name, func(t *testing.T) {
+				store, err := enigmap.NewORAMWithCacheCapacity[oramLatencyValue](
+					t.TempDir()+"/oram.db", uint64(entries),
+					[]byte("0123456789abcdef0123456789abcdef"), 8192,
+				)
+				if err != nil {
+					t.Fatalf("create ORAM: %v", err)
+				}
+				if nonOblivious {
+					store.EnableNonObliviousEvictionForProfile()
+				}
+				started := time.Now()
+				for index := 0; index < entries; index++ {
+					if err := store.Put(oramLatencyKey(index), oramLatencyData("data", index)); err != nil {
+						t.Fatalf("Put(%d): %v", index, err)
+					}
+				}
+				elapsed := time.Since(started)
+				stats := store.Stats().Client
+				if err := store.Close(); err != nil {
+					t.Fatalf("Close: %v", err)
+				}
+				fmt.Fprintf(os.Stdout,
+					"\nEVICTION entries=%d non-oblivious=%t put=%s op=%s evict=%s stash-visits=%d block-selects=%d max-stash=%d\n",
+					entries, nonOblivious, elapsed, elapsed/time.Duration(entries),
+					stats.EvictToPathTime, stats.EvictStashScans,
+					stats.EvictBlockSelects, stats.MaxStashLength,
+				)
+			})
+		}
+	}
+}

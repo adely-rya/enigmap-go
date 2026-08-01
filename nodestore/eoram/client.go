@@ -48,10 +48,11 @@ type Client[T core.Selectable[T]] struct {
 	stash  Stash[NodeBlock[T]]
 	random io.Reader
 
-	bucketSize    int
-	nextFreeBlock BlockAddress
-	access        accessState
-	stats         ClientStats
+	bucketSize           int
+	nextFreeBlock        BlockAddress
+	access               accessState
+	stats                ClientStats
+	nonObliviousEviction bool
 }
 
 type ClientStats struct {
@@ -221,17 +222,28 @@ func (client *Client[T]) FinishAccess(token avl.AccessToken, node avl.Node[T]) e
 		)
 	}
 
-	evictStashLength := len(client.stash.blocks)
-	client.stats.EvictStashScans += uint64(client.access.pathLength * evictStashLength)
-	client.stats.EvictBlockSelects += uint64(
-		client.access.pathLength * evictStashLength * client.bucketSize,
-	)
 	started = time.Now()
-	path := client.stash.EvictToPath(
-		client.access.oldLeaf,
-		client.access.pathLength,
-		client.bucketSize,
-	)
+	var path []Bucket[NodeBlock[T]]
+	if client.nonObliviousEviction {
+		var visits uint64
+		path, visits = client.stash.EvictToPathNonOblivious(
+			client.access.oldLeaf,
+			client.access.pathLength,
+			client.bucketSize,
+		)
+		client.stats.EvictStashScans += visits
+	} else {
+		evictStashLength := len(client.stash.blocks)
+		client.stats.EvictStashScans += uint64(client.access.pathLength * evictStashLength)
+		client.stats.EvictBlockSelects += uint64(
+			client.access.pathLength * evictStashLength * client.bucketSize,
+		)
+		path = client.stash.EvictToPath(
+			client.access.oldLeaf,
+			client.access.pathLength,
+			client.bucketSize,
+		)
+	}
 	client.stats.EvictToPathTime += time.Since(started)
 	client.stats.UnpinStashScans += uint64(len(client.stash.blocks))
 	started = time.Now()
@@ -257,6 +269,12 @@ func (client *Client[T]) FinishAccess(token avl.AccessToken, node avl.Node[T]) e
 }
 
 func (client *Client[T]) Stats() ClientStats { return client.stats }
+
+// EnableNonObliviousEvictionForProfile enables the branchful C++ comparison
+// mode. It is intentionally explicit because this weakens strong obliviousness.
+func (client *Client[T]) EnableNonObliviousEvictionForProfile() {
+	client.nonObliviousEviction = true
+}
 
 func (client *Client[T]) validateFinishAccess(token avl.AccessToken) error {
 	if client.access.phase != accessOpen {

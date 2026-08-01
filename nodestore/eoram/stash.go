@@ -310,6 +310,47 @@ func (stash *Stash[T]) EvictToPath(
 	return path
 }
 
+// EvictToPathNonOblivious is an experiment-only counterpart matching the
+// public C++ implementation's ObliviousCPUTrace=false branch. Its loop count
+// and branches depend on stash contents, so it must not be used when strong
+// obliviousness is required.
+func (stash *Stash[T]) EvictToPathNonOblivious(
+	leaf Leaf,
+	pathLength int,
+	bucketSize int,
+) ([]Bucket[T], uint64) {
+	path := make([]Bucket[T], pathLength)
+	blocks := make([]Block[T], pathLength*bucketSize)
+	var stashVisits uint64
+	for depth := 0; depth < pathLength; depth++ {
+		start := depth * bucketSize
+		path[depth] = blocks[start : start+bucketSize]
+	}
+
+	for depth := pathLength - 1; depth >= 0; depth-- {
+		shift := uint(pathLength - 1 - depth)
+		slot := 0
+		for index := 0; index < len(stash.blocks); index++ {
+			if slot == bucketSize {
+				break
+			}
+			stashVisits++
+			entry := &stash.blocks[index]
+			if entry.Block.Valid == 0 || entry.Sticky != 0 {
+				continue
+			}
+			if depth != 0 && uint64(entry.Block.Leaf)>>shift != uint64(leaf)>>shift {
+				continue
+			}
+			path[depth][slot] = entry.Block
+			entry.Block.Valid = 0
+			slot++
+		}
+	}
+	stash.compact()
+	return path, stashVisits
+}
+
 func (stash *Stash[T]) compact() {
 	write := 0
 	for read := 0; read < len(stash.blocks); read++ {
