@@ -34,6 +34,22 @@ func (k Key) Len() int {
 	return KeySize
 }
 
+// SelectKey returns candidate when condition is 1 and current otherwise.
+// It operates on the fixed arrays directly so hot ORAM loops do not allocate
+// temporary byte slices for every conditional block move.
+func SelectKey(current, candidate Key, condition int) Key {
+	condition &= 1
+	var selected Key
+	for index := 0; index < KeySize; index++ {
+		selected.data[index] = byte(subtle.ConstantTimeSelect(
+			condition,
+			int(candidate.data[index]),
+			int(current.data[index]),
+		))
+	}
+	return selected
+}
+
 // CompareKey compares two keys lexicographically. It examines all KeySize
 // bytes regardless of where the first difference occurs.
 func CompareKey(a, b Key) int {

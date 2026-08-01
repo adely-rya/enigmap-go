@@ -5,7 +5,8 @@ import "testing"
 func TestLargeBucketSerializationRoundTrip(t *testing.T) {
 	empty := make(Bucket[serializablePayload], BucketSize)
 	largeBucket := NewLargeBucket(empty)
-	largeBucket[2][4] = Block[serializablePayload]{
+	slot := BucketSize - 1
+	largeBucket[2][slot] = Block[serializablePayload]{
 		BlockAddress: 17,
 		Leaf:         9,
 		Data:         serializablePayload{0xaa, 0xbb},
@@ -25,8 +26,8 @@ func TestLargeBucketSerializationRoundTrip(t *testing.T) {
 		t.Fatalf("Deserialize: %v", err)
 	}
 	decoded := decodedValue.(LargeBucket[serializablePayload])
-	if decoded[2][4] != largeBucket[2][4] {
-		t.Fatalf("decoded block = %+v, want %+v", decoded[2][4], largeBucket[2][4])
+	if decoded[2][slot] != largeBucket[2][slot] {
+		t.Fatalf("decoded block = %+v, want %+v", decoded[2][slot], largeBucket[2][slot])
 	}
 }
 

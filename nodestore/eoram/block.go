@@ -119,20 +119,9 @@ func (block NodeBlock[V]) Select(
 ) NodeBlock[V] {
 	condition &= 1
 
-	currentKey := block.Node.Key.Bytes()
-	candidateKey := candidate.Node.Key.Bytes()
-	selectedKey := make([]byte, avl.KeySize)
-	for index := 0; index < avl.KeySize; index++ {
-		selectedKey[index] = byte(subtle.ConstantTimeSelect(
-			condition,
-			int(candidateKey[index]),
-			int(currentKey[index]),
-		))
-	}
-
 	return NodeBlock[V]{
 		Node: avl.Node[V]{
-			Key:     avl.NewKey(selectedKey),
+			Key:     avl.SelectKey(block.Node.Key, candidate.Node.Key, condition),
 			Value:   core.Select(block.Node.Value, candidate.Node.Value, condition),
 			Balance: avl.Balance(subtle.ConstantTimeSelect(condition, int(candidate.Node.Balance), int(block.Node.Balance))),
 			Left:    selectPointer(block.Node.Left, candidate.Node.Left, condition),

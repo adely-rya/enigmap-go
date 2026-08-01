@@ -23,7 +23,7 @@ const (
 	serializedBlockHeaderSize = 24
 	serializedBlockSize       = serializedBlockHeaderSize + serializedNodeBlockSize
 
-	BucketSize                 = 5
+	BucketSize                 = 4
 	serializedBucketBlockCount = BucketSize
 	serializedBucketSize       = serializedBucketBlockCount * serializedBlockSize
 
