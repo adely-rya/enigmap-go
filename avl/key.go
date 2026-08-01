@@ -2,9 +2,13 @@ package avl
 
 import (
 	"crypto/subtle"
+
+	"github.com/adely-rya/enigmap-go/config"
 )
 
-const KeySize = 33 //鍵サイズは固定長
+// KeySize is kept as an AVL-facing alias for compatibility. The shared
+// compile-time setting lives in package config.
+const KeySize = config.KeySize
 
 type Key struct {
 	data [KeySize]byte

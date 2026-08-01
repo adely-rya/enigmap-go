@@ -4,18 +4,17 @@ import (
 	"encoding/binary"
 	"fmt"
 
-	"github.com/adely-rya/enigmap-go/avl"
+	"github.com/adely-rya/enigmap-go/config"
 	"github.com/adely-rya/oram/core"
 )
 
 type Bucket[T core.Selectable[T]] []Block[T]
 
 const (
-	// KeyValueSize is the fixed serialized size of an AVL key and value.
-	// Change this constant to tune the ORAM payload size. ValueSize is derived
-	// from it so callers do not need to duplicate the value length.
-	KeyValueSize = 34
-	ValueSize    = KeyValueSize - avl.KeySize
+	// These aliases preserve the eoram API while package config remains the
+	// single source of truth for fixed key and value lengths.
+	KeyValueSize = config.KeyValueSize
+	ValueSize    = config.ValueSize
 
 	// balance (1), two child addresses (16), two child leaves (16), valid (1).
 	serializedAVLMetadataSize = 34
@@ -33,7 +32,7 @@ const (
 	LevelsPerLargeBucket            = 3
 	BucketsPerLargeBucket           = (1 << LevelsPerLargeBucket) - 1
 	serializedLargeBucketSize       = BucketsPerLargeBucket * serializedBucketSize
-	DefaultLargeBucketCacheCapacity = 30
+	DefaultLargeBucketCacheCapacity = 50
 )
 
 // Serialize encodes a fixed-size bucket for encryption or file storage.
