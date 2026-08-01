@@ -29,7 +29,7 @@ const (
 
 	// LevelsPerLargeBucket controls how many consecutive ORAM tree levels are
 	// packed into one physical file value.
-	LevelsPerLargeBucket            = 3
+	LevelsPerLargeBucket            = 4
 	BucketsPerLargeBucket           = (1 << LevelsPerLargeBucket) - 1
 	serializedLargeBucketSize       = BucketsPerLargeBucket * serializedBucketSize
 	DefaultLargeBucketCacheCapacity = 50

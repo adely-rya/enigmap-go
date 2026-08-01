@@ -3,7 +3,6 @@
 package enigmap_test
 
 import (
-	"crypto/subtle"
 	"fmt"
 	"os"
 	"testing"
@@ -12,48 +11,13 @@ import (
 	enigmap "github.com/adely-rya/enigmap-go"
 	"github.com/adely-rya/enigmap-go/avl"
 	"github.com/adely-rya/enigmap-go/nodestore/eoram"
-	"github.com/adely-rya/oram/core"
 )
 
 const (
 	oramLatencyEntryCount = 5000
 )
 
-type oramLatencyValue [eoram.ValueSize]byte
-
-func (value oramLatencyValue) Select(
-	candidate oramLatencyValue,
-	condition int,
-) oramLatencyValue {
-	var selected oramLatencyValue
-	for index := range selected {
-		selected[index] = byte(subtle.ConstantTimeSelect(
-			condition&1,
-			int(candidate[index]),
-			int(value[index]),
-		))
-	}
-	return selected
-}
-
-func (value oramLatencyValue) Serialize() ([]byte, error) {
-	encoded := make([]byte, len(value))
-	copy(encoded, value[:])
-	return encoded, nil
-}
-
-func (oramLatencyValue) Deserialize(encoded []byte) (core.Serializable, error) {
-	if len(encoded) != eoram.ValueSize {
-		return nil, fmt.Errorf(
-			"ORAM latency value size = %d, want %d",
-			len(encoded),
-			eoram.ValueSize,
-		)
-	}
-	var value oramLatencyValue
-	copy(value[:], encoded)
-	return value, nil
-}
+type oramLatencyValue = eoram.FixedValue
 
 func TestORAMFileStoreLatency(t *testing.T) {
 	filePath := t.TempDir() + "/oram-latency.db"

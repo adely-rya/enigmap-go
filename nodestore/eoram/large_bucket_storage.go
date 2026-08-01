@@ -145,7 +145,11 @@ func (storage *LargeBucketStorage[T]) WriteBatch(buckets []Bucket[T], indices []
 		if err != nil {
 			return err
 		}
-		value := cloneLargeBucket(entry.value)
+		// loadEntry returns cache-owned storage (or a private miss value when
+		// caching is disabled). Update it in place and copy only the logical
+		// buckets supplied by the caller; cloning the whole Large Bucket here
+		// multiplied memory traffic by every packed bucket.
+		value := entry.value
 		for _, update := range updates[physicalIndex] {
 			value[update.innerIndex] = cloneBucket(update.bucket)
 		}
@@ -160,7 +164,6 @@ func (storage *LargeBucketStorage[T]) WriteBatch(buckets []Bucket[T], indices []
 			storage.stats.BackingWrites++
 			continue
 		}
-		entry.value = value
 		entry.dirty = true
 	}
 	return nil

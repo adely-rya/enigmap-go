@@ -64,6 +64,8 @@ type ClientStats struct {
 	EvictToPathTime   time.Duration
 	WritePathTime     time.Duration
 	UnpinTime         time.Duration
+	NewPositionTime   time.Duration
+	NewPositions      uint64
 	MaxStashLength    uint64
 	PathBucketsRead   uint64
 	AddPathBlocks     uint64
@@ -126,6 +128,11 @@ func NewOramClientWithStashSize[T core.Selectable[T]](
 
 // ランダムにリーフを選定する
 func (client *Client[T]) NewPosition() (avl.ORAMPosition, error) {
+	started := time.Now()
+	defer func() {
+		client.stats.NewPositionTime += time.Since(started)
+		client.stats.NewPositions++
+	}()
 	var randomBytes [8]byte
 	if _, err := io.ReadFull(client.random, randomBytes[:]); err != nil {
 		return 0, err
@@ -174,9 +181,7 @@ func (client *Client[T]) BeginAccess(pointer avl.Pointer, newLeaf avl.ORAMPositi
 		Leaf(newLeaf),
 	)
 	client.stats.PrepareAccessTime += time.Since(started)
-	// PrepareAccess performs one scan to select the value and another to
-	// update its position and sticky bit.
-	client.stats.PrepareStashScans += uint64(2 * prepareStashLength)
+	client.stats.PrepareStashScans += uint64(prepareStashLength)
 
 	if found == 0 {
 		return zeroNode, zeroToken, fmt.Errorf(

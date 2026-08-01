@@ -1,7 +1,8 @@
 package avl
 
 import (
-	"crypto/subtle"
+	"encoding/binary"
+	"math/bits"
 
 	"github.com/adely-rya/enigmap-go/config"
 )
@@ -10,8 +11,17 @@ import (
 // compile-time setting lives in package config.
 const KeySize = config.KeySize
 
+// The word representation is intentionally available only for the configured
+// eight-byte experiment. Both array lengths compile only when KeySize == 8.
+var (
+	_ [KeySize - 8]struct{}
+	_ [8 - KeySize]struct{}
+)
+
 type Key struct {
-	data [KeySize]byte
+	// Big-endian encoding makes unsigned word order equal byte-lexicographic
+	// order while allowing one word-sized conditional move.
+	word uint64
 }
 
 func NewKey(src []byte) Key {
@@ -19,14 +29,12 @@ func NewKey(src []byte) Key {
 		panic("key length must equal KeySize")
 	}
 
-	var key Key
-	copy(key.data[:], src)
-	return key
+	return Key{word: binary.BigEndian.Uint64(src)}
 }
 
 func (k Key) Bytes() []byte {
 	dst := make([]byte, KeySize)
-	copy(dst, k.data[:])
+	binary.BigEndian.PutUint64(dst, k.word)
 	return dst
 }
 
@@ -38,42 +46,16 @@ func (k Key) Len() int {
 // It operates on the fixed arrays directly so hot ORAM loops do not allocate
 // temporary byte slices for every conditional block move.
 func SelectKey(current, candidate Key, condition int) Key {
-	condition &= 1
-	var selected Key
-	for index := 0; index < KeySize; index++ {
-		selected.data[index] = byte(subtle.ConstantTimeSelect(
-			condition,
-			int(candidate.data[index]),
-			int(current.data[index]),
-		))
-	}
-	return selected
+	mask := uint64(0) - uint64(condition&1)
+	return Key{word: current.word ^ ((current.word ^ candidate.word) & mask)}
 }
 
-// CompareKey compares two keys lexicographically. It examines all KeySize
-// bytes regardless of where the first difference occurs.
+// CompareKey compares the big-endian words in byte-lexicographic order.
+// bits.Sub64 returns the unsigned borrow without data-dependent branches.
 func CompareKey(a, b Key) int {
-	less := 0
-	greater := 0
-	equalSoFar := 1
-
-	for i := 0; i < KeySize; i++ {
-		equal := subtle.ConstantTimeByteEq(a.data[i], b.data[i])
-		aLess := subtle.ConstantTimeLessOrEq(
-			int(a.data[i]),
-			int(b.data[i]),
-		) & (equal ^ 1)
-		aGreater := subtle.ConstantTimeLessOrEq(
-			int(b.data[i]),
-			int(a.data[i]),
-		) & (equal ^ 1)
-
-		less |= equalSoFar & aLess
-		greater |= equalSoFar & aGreater
-		equalSoFar &= equal //一つでもゼロだったらずっとゼロ
-	}
-
-	return greater - less
+	_, less := bits.Sub64(a.word, b.word, 0)
+	_, greater := bits.Sub64(b.word, a.word, 0)
+	return int(greater) - int(less)
 }
 
 // a < b  less = 1 greater = 0  return -1

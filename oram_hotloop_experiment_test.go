@@ -12,8 +12,8 @@ import (
 )
 
 func TestORAMHotLoopExperiment(t *testing.T) {
-	for _, entries := range []int{1000, 3000} {
-		for _, cacheCapacity := range []int{30, 8192} {
+	for _, entries := range []int{1000, 3000, 10000} {
+		for _, cacheCapacity := range []int{30, 50, 8192} {
 			name := fmt.Sprintf("entries-%d/cache-%d", entries, cacheCapacity)
 			t.Run(name, func(t *testing.T) {
 				store, err := enigmap.NewORAMWithCacheCapacity[oramLatencyValue](
@@ -49,7 +49,8 @@ func TestORAMHotLoopExperiment(t *testing.T) {
 					client.Accesses, client.MaxStashLength,
 				)
 				fmt.Fprintf(os.Stdout,
-					"times read=%s add=%s prepare=%s update=%s evict=%s write=%s unpin=%s\n",
+					"times random=%s/%d read=%s add=%s prepare=%s update=%s evict=%s write=%s unpin=%s\n",
+					client.NewPositionTime, client.NewPositions,
 					client.ReadPathTime, client.AddPathTime, client.PrepareAccessTime,
 					client.UpdateBlockTime, client.EvictToPathTime,
 					client.WritePathTime, client.UnpinTime,
@@ -149,5 +150,52 @@ func TestORAMEvictionModeExperiment(t *testing.T) {
 				)
 			})
 		}
+	}
+}
+
+func TestORAMOptimizedOperationExperiment(t *testing.T) {
+	for _, entries := range []int{1000, 3000} {
+		t.Run(fmt.Sprintf("entries-%d", entries), func(t *testing.T) {
+			store, err := enigmap.NewORAMWithCacheCapacity[oramLatencyValue](
+				t.TempDir()+"/oram.db", uint64(entries),
+				[]byte("0123456789abcdef0123456789abcdef"), 8192,
+			)
+			if err != nil {
+				t.Fatalf("create ORAM: %v", err)
+			}
+			measure := func(operation string, run func(int) error) time.Duration {
+				started := time.Now()
+				for index := 0; index < entries; index++ {
+					if err := run(index); err != nil {
+						t.Fatalf("%s(%d): %v", operation, index, err)
+					}
+				}
+				return time.Since(started)
+			}
+			newPut := measure("new Put", func(index int) error {
+				return store.Put(oramLatencyKey(index), oramLatencyData("data", index))
+			})
+			overwrite := measure("overwrite Put", func(index int) error {
+				return store.Put(oramLatencyKey(index), oramLatencyData("updated", index))
+			})
+			get := measure("Get", func(index int) error {
+				_, found, err := store.Get(oramLatencyKey(index))
+				if err == nil && !found {
+					return fmt.Errorf("key not found")
+				}
+				return err
+			})
+			stats := store.Stats()
+			if err := store.Close(); err != nil {
+				t.Fatalf("Close: %v", err)
+			}
+			fmt.Fprintf(os.Stdout,
+				"\nOPTIMIZED entries=%d new-put=%s overwrite=%s get=%s accesses=%d cache-hit=%.1f%% misses=%d evict=%s\n",
+				entries, newPut/time.Duration(entries), overwrite/time.Duration(entries),
+				get/time.Duration(entries), stats.Client.Accesses,
+				percent(stats.Cache.Hits, stats.Cache.Hits+stats.Cache.Misses),
+				stats.Cache.Misses, stats.Client.EvictToPathTime,
+			)
+		})
 	}
 }

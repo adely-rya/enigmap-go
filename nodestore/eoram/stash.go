@@ -2,6 +2,7 @@ package eoram
 
 import (
 	"crypto/subtle"
+	"unsafe"
 
 	"github.com/adely-rya/oram/core"
 	"github.com/adely-rya/oram/utils"
@@ -119,7 +120,8 @@ func (stash *Stash[T]) PrepareAccess(
 	blockAddress BlockAddress,
 	newLeaf Leaf,
 ) (T, int) {
-	value, found := stash.Get(blockAddress)
+	var value T
+	found := 0
 	selected := 0
 
 	for index := 0; index < len(stash.blocks); index++ {
@@ -131,6 +133,7 @@ func (stash *Stash[T]) PrepareAccess(
 			) &
 			utils.CtNot(selected)
 
+		value = core.Select(value, entry.Block.Data, match)
 		entry.Block.Leaf = Leaf(utils.CtSelect64(
 			match,
 			uint64(newLeaf),
@@ -139,6 +142,7 @@ func (stash *Stash[T]) PrepareAccess(
 		entry.Sticky = subtle.ConstantTimeSelect(match, 1, entry.Sticky)
 		stash.blocks[index] = entry
 		selected |= match
+		found |= match
 	}
 
 	return value, found
@@ -254,10 +258,19 @@ func (stash *Stash[T]) EvictToPath(
 	pathLength int,
 	bucketSize int,
 ) []Bucket[T] {
+	if fixedStash, ok := any(stash).(*Stash[NodeBlock[FixedValue]]); ok {
+		fixedPath := evictFixedValueToPath(
+			fixedStash,
+			leaf,
+			pathLength,
+			bucketSize,
+		)
+		return any(fixedPath).([]Bucket[T])
+	}
+
 	path := make([]Bucket[T], pathLength)
 	blocks := make([]Block[T], pathLength*bucketSize)
 	used := make([]int, bucketSize)
-
 	for depth := 0; depth < pathLength; depth++ {
 		start := depth * bucketSize
 		path[depth] = blocks[start : start+bucketSize]
@@ -310,6 +323,64 @@ func (stash *Stash[T]) EvictToPath(
 	return path
 }
 
+// evictFixedValueToPath is the concrete, dictionary-free strong-oblivious
+// eviction path for the configured eight-byte key/value representation.
+func evictFixedValueToPath(
+	stash *Stash[NodeBlock[FixedValue]],
+	leaf Leaf,
+	pathLength int,
+	bucketSize int,
+) []Bucket[NodeBlock[FixedValue]] {
+	const blockWordCount = int(unsafe.Sizeof(Block[NodeBlock[FixedValue]]{})) / 8
+	path := make([]Bucket[NodeBlock[FixedValue]], pathLength)
+	blocks := make([]Block[NodeBlock[FixedValue]], pathLength*bucketSize)
+	used := make([]int, bucketSize)
+	for depth := 0; depth < pathLength; depth++ {
+		start := depth * bucketSize
+		path[depth] = blocks[start : start+bucketSize]
+	}
+	for depth := pathLength - 1; depth >= 0; depth-- {
+		shift := uint(pathLength - 1 - depth)
+		isRoot := utils.CtEqUint64(uint64(depth), 0)
+		for slot := 0; slot < bucketSize; slot++ {
+			used[slot] = 0
+		}
+		for index := 0; index < len(stash.blocks); index++ {
+			current := stash.blocks[index]
+			prefixMatch := utils.CtEqUint64(
+				uint64(current.Block.Leaf)>>shift,
+				uint64(leaf)>>shift,
+			)
+			onPath := isRoot | (utils.CtNot(isRoot) & prefixMatch)
+			eligible := current.Block.Valid & utils.CtNot(current.Sticky) & onPath
+			placed := 0
+			for slot := 0; slot < bucketSize; slot++ {
+				free := utils.CtNot(used[slot])
+				take := eligible & utils.CtNot(placed) & free
+				currentWords := (*[blockWordCount]uint64)(unsafe.Pointer(&path[depth][slot]))
+				candidateWords := (*[blockWordCount]uint64)(unsafe.Pointer(&current.Block))
+				for word := 0; word < blockWordCount; word++ {
+					currentWords[word] = selectUint64(
+						currentWords[word],
+						candidateWords[word],
+						take,
+					)
+				}
+				used[slot] |= take
+				placed |= take
+			}
+			current.Block.Valid = int(selectUint64(
+				uint64(current.Block.Valid),
+				0,
+				placed,
+			))
+			stash.blocks[index] = current
+		}
+	}
+	stash.compact()
+	return path
+}
+
 // EvictToPathNonOblivious is an experiment-only counterpart matching the
 // public C++ implementation's ObliviousCPUTrace=false branch. Its loop count
 // and branches depend on stash contents, so it must not be used when strong
@@ -321,11 +392,11 @@ func (stash *Stash[T]) EvictToPathNonOblivious(
 ) ([]Bucket[T], uint64) {
 	path := make([]Bucket[T], pathLength)
 	blocks := make([]Block[T], pathLength*bucketSize)
-	var stashVisits uint64
 	for depth := 0; depth < pathLength; depth++ {
 		start := depth * bucketSize
 		path[depth] = blocks[start : start+bucketSize]
 	}
+	var stashVisits uint64
 
 	for depth := pathLength - 1; depth >= 0; depth-- {
 		shift := uint(pathLength - 1 - depth)
