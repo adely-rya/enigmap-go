@@ -15,8 +15,9 @@ The paper and public C++ implementation use these important mechanisms:
 
 - Path ORAM bucket capacity `Z=4`.
 - Sticky stash entries avoid ORAM reads during AVL Insert's second pass.
-- Strong eviction performs `path length * Z * stash length` conditional block
-  exchanges. The paper explicitly says ORAM eviction dominates computation.
+- Strong eviction in the paper and public C++ code performs three oblivious
+  sorts. Go's current strong path uses a fixed-trace greedy
+  `path length * Z * stash length` scan instead.
 - Physical caching has two levels: an encrypted page cache outside the enclave
   and an ORAM-bucket cache inside it.
 - The public C++ defaults are four levels per Large Bucket, an 8192-entry
@@ -43,7 +44,7 @@ The remaining difference is primarily inside each ORAM access.
 | Read path into stash | `L * Z` appends | `L * Z` appends | Equivalent |
 | Find and pin target | two stash scans | one stash scan | Go has one extra scan |
 | Update and unpin | separate scans | combined CMOV scan | Go has an extra scan |
-| Strong eviction | `L * S * Z` full block selects | `L * Z * S` CXCHGs | Same asymptotic loop count; different loop order and primitive cost |
+| Strong eviction | `L * S * Z` full block selects | three oblivious bitonic sorts | Different algorithms; Go's inner primitive was initially much more expensive |
 | Conditional move | nested Go generic `Select` and bit masks | inlined field CMOV/assembly | Go is substantially more expensive per iteration |
 
 Here `L` is path length and `S` is the stash length immediately before
@@ -89,8 +90,10 @@ the total number of full block selects falls by about 36%.
 
 The C++ comparison uses its in-memory backend and no Large Bucket encryption.
 It nevertheless uses the default strong `ObliviousCPUTrace=true` Path ORAM
-eviction. The Go/C++ Insert gap after matching `Z` remains about 4.3x at 1,000
-and 4.9x at 3,000.
+eviction. In that branch `FinishAccess` calls `EvictPath`, which executes three
+oblivious sorts; the triple-loop `WriteBucket` path belongs to the
+`ObliviousCPUTrace=false` external-oblivious mode. The Go/C++ Insert gap after
+matching only `Z` remained about 4.3x at 1,000 and 4.9x at 3,000.
 
 ### Encryption isolation (`Z=4`, pack=3, cache=30, file backed)
 
@@ -140,8 +143,9 @@ assignments reveal data-dependent CPU/cache traces.
 2. Size the decrypted Large Bucket cache for the experiment explicitly. A
    capacity of 30 or 50 cannot be compared with the C++ default 8192 and causes
    heavy thrashing at 1,000 and 3,000 entries.
-3. Keep pack=3 for now. Before testing pack=4 again, update cached Large Buckets
-   in place or otherwise eliminate full-value clones.
+3. Re-test pack=4 after eliminating whole-Large-Bucket clones. This follow-up
+   was completed on `feature/profile-eoram-word-select`; pack=4 is slightly
+   faster and is now the selected setting.
 4. Keep AES-GCM enabled for real measurements; disabling it explains only a
    small part of the current gap.
 5. Optimize the strong conditional exchange primitive. The likely productive
@@ -153,3 +157,6 @@ assignments reveal data-dependent CPU/cache traces.
    two stash scans, but measured phase times show this is secondary.
 7. Do not adopt the non-oblivious experiment mode as an optimization. It exists
    only as causal evidence.
+
+The completed fixed-word follow-up, current measurements, and security notes
+are in `docs/eoram-word-select-experiment.md`.
