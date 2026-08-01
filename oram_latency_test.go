@@ -16,7 +16,7 @@ import (
 )
 
 const (
-	oramLatencyEntryCount = 100
+	oramLatencyEntryCount = 5000
 )
 
 type oramLatencyValue [eoram.ValueSize]byte

@@ -64,6 +64,13 @@ type ClientStats struct {
 	WritePathTime     time.Duration
 	UnpinTime         time.Duration
 	MaxStashLength    uint64
+	PathBucketsRead   uint64
+	AddPathBlocks     uint64
+	PrepareStashScans uint64
+	UpdateStashScans  uint64
+	EvictStashScans   uint64
+	EvictBlockSelects uint64
+	UnpinStashScans   uint64
 }
 
 // NewOramClient creates an ENIGMAP Path ORAM client backed by server.
@@ -149,6 +156,8 @@ func (client *Client[T]) BeginAccess(pointer avl.Pointer, newLeaf avl.ORAMPositi
 	started = time.Now()
 	added := client.stash.AddPath(path, client.bucketSize)
 	client.stats.AddPathTime += time.Since(started)
+	client.stats.PathBucketsRead += uint64(len(path))
+	client.stats.AddPathBlocks += uint64(len(path) * client.bucketSize)
 	if uint64(len(client.stash.blocks)) > client.stats.MaxStashLength {
 		client.stats.MaxStashLength = uint64(len(client.stash.blocks))
 	}
@@ -157,12 +166,16 @@ func (client *Client[T]) BeginAccess(pointer avl.Pointer, newLeaf avl.ORAMPositi
 	}
 
 	blockAddress := BlockAddress(pointer.Address)
+	prepareStashLength := len(client.stash.blocks)
 	started = time.Now()
 	value, found := client.stash.PrepareAccess(
 		blockAddress,
 		Leaf(newLeaf),
 	)
 	client.stats.PrepareAccessTime += time.Since(started)
+	// PrepareAccess performs one scan to select the value and another to
+	// update its position and sticky bit.
+	client.stats.PrepareStashScans += uint64(2 * prepareStashLength)
 
 	if found == 0 {
 		return zeroNode, zeroToken, fmt.Errorf(
@@ -192,12 +205,14 @@ func (client *Client[T]) FinishAccess(token avl.AccessToken, node avl.Node[T]) e
 		return err
 	}
 
+	updateStashLength := len(client.stash.blocks)
 	started := time.Now()
 	updated := client.stash.UpdateAccessedBlock(
 		client.access.blockAddress,
 		NodeBlock[T]{Node: node},
 	)
 	client.stats.UpdateBlockTime += time.Since(started)
+	client.stats.UpdateStashScans += uint64(updateStashLength)
 	if updated == 0 {
 		return fmt.Errorf(
 			"%w: FinishAccess blockAddress=%d",
@@ -206,6 +221,11 @@ func (client *Client[T]) FinishAccess(token avl.AccessToken, node avl.Node[T]) e
 		)
 	}
 
+	evictStashLength := len(client.stash.blocks)
+	client.stats.EvictStashScans += uint64(client.access.pathLength * evictStashLength)
+	client.stats.EvictBlockSelects += uint64(
+		client.access.pathLength * evictStashLength * client.bucketSize,
+	)
 	started = time.Now()
 	path := client.stash.EvictToPath(
 		client.access.oldLeaf,
@@ -213,6 +233,7 @@ func (client *Client[T]) FinishAccess(token avl.AccessToken, node avl.Node[T]) e
 		client.bucketSize,
 	)
 	client.stats.EvictToPathTime += time.Since(started)
+	client.stats.UnpinStashScans += uint64(len(client.stash.blocks))
 	started = time.Now()
 	if err := client.server.WritePath(path, client.access.oldLeaf); err != nil {
 		client.stats.WritePathTime += time.Since(started)
