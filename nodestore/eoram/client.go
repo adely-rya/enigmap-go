@@ -109,8 +109,9 @@ func NewOramClientWithStashSize[T core.Selectable[T]](
 	client := &Client[T]{
 		server: server,
 		stash: Stash[NodeBlock[T]]{
-			blocks:   make([]StashedBlock[NodeBlock[T]], 0, stashSize),
-			capacity: stashSize,
+			blocks:        make([]StashedBlock[NodeBlock[T]], stashSize),
+			capacity:      stashSize,
+			fixedCapacity: true,
 		},
 		random:        cryptoRand.Reader,
 		bucketSize:    bucketSize,
@@ -166,8 +167,9 @@ func (client *Client[T]) BeginAccess(pointer avl.Pointer, newLeaf avl.ORAMPositi
 	client.stats.AddPathTime += time.Since(started)
 	client.stats.PathBucketsRead += uint64(len(path))
 	client.stats.AddPathBlocks += uint64(len(path) * client.bucketSize)
-	if uint64(len(client.stash.blocks)) > client.stats.MaxStashLength {
-		client.stats.MaxStashLength = uint64(len(client.stash.blocks))
+	validStashBlocks := client.stash.validBlockCount()
+	if uint64(validStashBlocks) > client.stats.MaxStashLength {
+		client.stats.MaxStashLength = uint64(validStashBlocks)
 	}
 	if added == 0 {
 		return zeroNode, zeroToken, ErrStashOverflow

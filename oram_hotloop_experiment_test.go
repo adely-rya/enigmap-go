@@ -12,8 +12,8 @@ import (
 )
 
 func TestORAMHotLoopExperiment(t *testing.T) {
-	for _, entries := range []int{1000, 3000, 10000} {
-		for _, cacheCapacity := range []int{30, 50, 8192} {
+	for _, entries := range []int{1000, 3000, 10000, 100000} {
+		for _, cacheCapacity := range []int{30, 50, 8192, 69905} {
 			name := fmt.Sprintf("entries-%d/cache-%d", entries, cacheCapacity)
 			t.Run(name, func(t *testing.T) {
 				store, err := enigmap.NewORAMWithCacheCapacity[oramLatencyValue](

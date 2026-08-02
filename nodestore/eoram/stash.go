@@ -17,8 +17,9 @@ type StashedBlock[T core.Selectable[T]] struct {
 // Stash holds blocks that have been read from ORAM paths but have not yet been
 // written back.
 type Stash[T core.Selectable[T]] struct {
-	blocks   []StashedBlock[T]
-	capacity int
+	blocks        []StashedBlock[T]
+	capacity      int
+	fixedCapacity bool
 }
 
 func (block Block[T]) MakeStashedBlock(sticky int) StashedBlock[T] {
@@ -29,9 +30,6 @@ func (block Block[T]) MakeStashedBlock(sticky int) StashedBlock[T] {
 }
 
 func (stash *Stash[T]) Put(block Block[T]) int {
-	if block.Valid == 0 {
-		return 1
-	}
 	exists := 0
 
 	//同じブロックがスタッシュにあるかの判定
@@ -45,7 +43,8 @@ func (stash *Stash[T]) Put(block Block[T]) int {
 			)
 	}
 
-	written := exists
+	written := utils.CtNot(block.Valid)
+	inserted := 0
 	for index := 0; index < len(stash.blocks); index++ {
 		current := stash.blocks[index]
 
@@ -54,12 +53,16 @@ func (stash *Stash[T]) Put(block Block[T]) int {
 			uint64(block.BlockAddress),
 		) //同じアドレスでエントリーがリアルか判定
 		update := exists & match
-		current.Block = current.Block.Select(block, update)
+		insert := utils.CtNot(exists) & block.Valid &
+			utils.CtNot(current.Block.Valid) & utils.CtNot(inserted)
+		current.Block = current.Block.Select(block, update|insert)
+		current.Sticky = subtle.ConstantTimeSelect(insert, 0, current.Sticky)
 		stash.blocks[index] = current
-		written |= update
+		inserted |= insert
+		written |= update | insert
 	}
 
-	if exists == 0 {
+	if !stash.fixedCapacity && exists == 0 && block.Valid != 0 {
 		if stash.capacity > 0 && len(stash.blocks) >= stash.capacity {
 			return 0
 		}
@@ -235,20 +238,99 @@ func (stash *Stash[T]) AddPath(path []Bucket[T], bucketSize int) int {
 			return 0
 		}
 	}
-	required := len(path) * bucketSize
-	if stash.capacity > 0 && len(stash.blocks)+required > stash.capacity {
-		return 0
+	if fixedStash, ok := any(stash).(*Stash[NodeBlock[FixedValue]]); ok && stash.fixedCapacity {
+		return addFixedValuePath(
+			fixedStash,
+			any(path).([]Bucket[NodeBlock[FixedValue]]),
+			bucketSize,
+		)
 	}
-
+	if !stash.fixedCapacity {
+		required := len(path) * bucketSize
+		if stash.capacity > 0 && len(stash.blocks)+required > stash.capacity {
+			return 0
+		}
+		for depth := 0; depth < len(path); depth++ {
+			for slot := 0; slot < bucketSize; slot++ {
+				stash.blocks = append(
+					stash.blocks,
+					path[depth][slot].MakeStashedBlock(0),
+				)
+			}
+		}
+		return 1
+	}
+	added := 1
 	for depth := 0; depth < len(path); depth++ {
 		for slot := 0; slot < bucketSize; slot++ {
-			stash.blocks = append(
-				stash.blocks,
-				path[depth][slot].MakeStashedBlock(0),
-			)
+			added &= stash.Put(path[depth][slot])
 		}
 	}
-	return 1
+	return added
+}
+
+// addFixedValuePath preserves the fixed two-pass stash trace while replacing
+// nested generic field selection with raw word selection of the pointer-free
+// concrete block.
+func addFixedValuePath(
+	stash *Stash[NodeBlock[FixedValue]],
+	path []Bucket[NodeBlock[FixedValue]],
+	bucketSize int,
+) int {
+	const blockWordCount = int(unsafe.Sizeof(Block[NodeBlock[FixedValue]]{})) / 8
+	added := 1
+	for depth := 0; depth < len(path); depth++ {
+		for slot := 0; slot < bucketSize; slot++ {
+			block := path[depth][slot]
+			exists := 0
+			for index := 0; index < len(stash.blocks); index++ {
+				current := stash.blocks[index]
+				exists |= block.Valid & current.Block.Valid & utils.CtEqUint64(
+					uint64(current.Block.BlockAddress),
+					uint64(block.BlockAddress),
+				)
+			}
+			written := utils.CtNot(block.Valid)
+			inserted := 0
+			for index := 0; index < len(stash.blocks); index++ {
+				current := &stash.blocks[index]
+				match := current.Block.Valid & utils.CtEqUint64(
+					uint64(current.Block.BlockAddress),
+					uint64(block.BlockAddress),
+				)
+				update := exists & match
+				insert := utils.CtNot(exists) & block.Valid &
+					utils.CtNot(current.Block.Valid) & utils.CtNot(inserted)
+				take := update | insert
+				currentWords := (*[blockWordCount]uint64)(unsafe.Pointer(&current.Block))
+				candidateWords := (*[blockWordCount]uint64)(unsafe.Pointer(&block))
+				for word := 0; word < blockWordCount; word++ {
+					currentWords[word] = selectUint64(
+						currentWords[word],
+						candidateWords[word],
+						take,
+					)
+				}
+				current.Sticky = int(selectUint64(
+					uint64(current.Sticky),
+					0,
+					insert,
+				))
+				inserted |= insert
+				written |= take
+			}
+			added &= written
+		}
+	}
+	return added
+}
+
+func (stash *Stash[T]) validBlockCount() int {
+	count := 0
+	for index := 0; index < len(stash.blocks); index++ {
+		count += stash.blocks[index].Block.Valid & 1
+	}
+	return count
 }
 
 // EvictToPath greedily fills a root-to-leaf path from the deepest bucket.
@@ -423,6 +505,9 @@ func (stash *Stash[T]) EvictToPathNonOblivious(
 }
 
 func (stash *Stash[T]) compact() {
+	if stash.fixedCapacity {
+		return
+	}
 	write := 0
 	for read := 0; read < len(stash.blocks); read++ {
 		if stash.blocks[read].Block.Valid == 0 {

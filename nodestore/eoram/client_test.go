@@ -25,8 +25,8 @@ func TestNewOramClient(t *testing.T) {
 	if client.bucketSize != 3 {
 		t.Fatalf("bucket size = %d, want 3", client.bucketSize)
 	}
-	if client.stash.capacity == 0 || len(client.stash.blocks) != 0 {
-		t.Fatalf("dynamic stash = (len=%d, capacity=%d), want empty with positive capacity", len(client.stash.blocks), client.stash.capacity)
+	if client.stash.capacity == 0 || len(client.stash.blocks) != client.stash.capacity || !client.stash.fixedCapacity {
+		t.Fatalf("fixed stash = (len=%d, capacity=%d, fixed=%t), want len=capacity>0", len(client.stash.blocks), client.stash.capacity, client.stash.fixedCapacity)
 	}
 	if client.access.phase != accessReady {
 		t.Fatalf("access phase = %d, want ready", client.access.phase)
@@ -121,35 +121,48 @@ func TestClientFreeMaybe(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewOramClient: %v", err)
 	}
-	client.stash.blocks = append(client.stash.blocks, Block[NodeBlock[selectableString]]{
+	block := Block[NodeBlock[selectableString]]{
 		BlockAddress: 9,
 		Leaf:         2,
 		Data: NodeBlock[selectableString]{
 			Node: avl.Node[selectableString]{Value: "candidate", Valid: 1},
 		},
 		Valid: 1,
-	}.MakeStashedBlock(1))
+	}
+	if client.stash.PutPinned(block) == 0 {
+		t.Fatal("PutPinned failed")
+	}
+	findCandidate := func() StashedBlock[NodeBlock[selectableString]] {
+		for _, entry := range client.stash.blocks {
+			if entry.Block.BlockAddress == 9 {
+				return entry
+			}
+		}
+		return StashedBlock[NodeBlock[selectableString]]{}
+	}
 
 	if err := client.FreeMaybe(avl.Pointer{Address: 9}, 0); err != nil {
 		t.Fatalf("FreeMaybe(condition=0): %v", err)
 	}
-	if client.stash.blocks[0].Block.Valid != 1 || client.stash.blocks[0].Sticky != 1 {
-		t.Fatalf("condition=0 changed block: %+v", client.stash.blocks[0])
+	entry := findCandidate()
+	if entry.Block.Valid != 1 || entry.Sticky != 1 {
+		t.Fatalf("condition=0 changed block: %+v", entry)
 	}
 
 	if err := client.FreeMaybe(avl.Pointer{Address: 9}, 1); err != nil {
 		t.Fatalf("FreeMaybe(condition=1): %v", err)
 	}
-	if client.stash.blocks[0].Block.Valid != 0 {
-		t.Fatalf("freed block Valid = %d, want 0", client.stash.blocks[0].Block.Valid)
+	entry = findCandidate()
+	if entry.Block.Valid != 0 {
+		t.Fatalf("freed block Valid = %d, want 0", entry.Block.Valid)
 	}
-	if client.stash.blocks[0].Sticky != 0 {
-		t.Fatalf("freed block Sticky = %d, want 0", client.stash.blocks[0].Sticky)
+	if entry.Sticky != 0 {
+		t.Fatalf("freed block Sticky = %d, want 0", entry.Sticky)
 	}
-	if client.stash.blocks[0].Block.Data.Node.Value != "" {
+	if entry.Block.Data.Node.Value != "" {
 		t.Fatalf(
 			"freed block data = %q, want zero value",
-			client.stash.blocks[0].Block.Data.Node.Value,
+			entry.Block.Data.Node.Value,
 		)
 	}
 }

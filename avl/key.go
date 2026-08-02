@@ -5,23 +5,23 @@ import (
 	"math/bits"
 
 	"github.com/adely-rya/enigmap-go/config"
+	"github.com/adely-rya/oram/utils"
 )
 
 // KeySize is kept as an AVL-facing alias for compatibility. The shared
 // compile-time setting lives in package config.
 const KeySize = config.KeySize
 
-// The word representation is intentionally available only for the configured
-// eight-byte experiment. Both array lengths compile only when KeySize == 8.
+const keyWordCount = KeySize / 8
+
+// Both array lengths compile only when KeySize is word aligned.
 var (
-	_ [KeySize - 8]struct{}
-	_ [8 - KeySize]struct{}
+	_ [KeySize % 8]struct{}
+	_ [-(KeySize % 8)]struct{}
 )
 
 type Key struct {
-	// Big-endian encoding makes unsigned word order equal byte-lexicographic
-	// order while allowing one word-sized conditional move.
-	word uint64
+	words [keyWordCount]uint64
 }
 
 func NewKey(src []byte) Key {
@@ -29,12 +29,20 @@ func NewKey(src []byte) Key {
 		panic("key length must equal KeySize")
 	}
 
-	return Key{word: binary.BigEndian.Uint64(src)}
+	var key Key
+	for index := range key.words {
+		start := index * 8
+		key.words[index] = binary.BigEndian.Uint64(src[start : start+8])
+	}
+	return key
 }
 
 func (k Key) Bytes() []byte {
 	dst := make([]byte, KeySize)
-	binary.BigEndian.PutUint64(dst, k.word)
+	for index, word := range k.words {
+		start := index * 8
+		binary.BigEndian.PutUint64(dst[start:start+8], word)
+	}
 	return dst
 }
 
@@ -47,15 +55,27 @@ func (k Key) Len() int {
 // temporary byte slices for every conditional block move.
 func SelectKey(current, candidate Key, condition int) Key {
 	mask := uint64(0) - uint64(condition&1)
-	return Key{word: current.word ^ ((current.word ^ candidate.word) & mask)}
+	var selected Key
+	for index := range selected.words {
+		selected.words[index] = current.words[index] ^
+			((current.words[index] ^ candidate.words[index]) & mask)
+	}
+	return selected
 }
 
-// CompareKey compares the big-endian words in byte-lexicographic order.
-// bits.Sub64 returns the unsigned borrow without data-dependent branches.
+// CompareKey scans every big-endian word and preserves the first difference.
 func CompareKey(a, b Key) int {
-	_, less := bits.Sub64(a.word, b.word, 0)
-	_, greater := bits.Sub64(b.word, a.word, 0)
-	return int(greater) - int(less)
+	less := 0
+	greater := 0
+	equalSoFar := 1
+	for index := range a.words {
+		_, wordLess := bits.Sub64(a.words[index], b.words[index], 0)
+		_, wordGreater := bits.Sub64(b.words[index], a.words[index], 0)
+		less |= equalSoFar & int(wordLess)
+		greater |= equalSoFar & int(wordGreater)
+		equalSoFar &= utils.CtEqUint64(a.words[index], b.words[index])
+	}
+	return greater - less
 }
 
 // a < b  less = 1 greater = 0  return -1

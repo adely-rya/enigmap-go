@@ -8,12 +8,12 @@ import (
 
 func TestKeyWordRepresentationPreservesLexicographicOrder(t *testing.T) {
 	keys := [][]byte{
-		{0, 0, 0, 0, 0, 0, 0, 0},
-		{0, 0, 0, 0, 0, 0, 0, 1},
-		{0, 0, 0, 1, 0, 0, 0, 0},
-		{0x7f, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff},
-		{0x80, 0, 0, 0, 0, 0, 0, 0},
-		{0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff},
+		make([]byte, KeySize),
+		keyWithBytes(KeySize-1, 1),
+		keyWithBytes(8, 1),
+		keyWithBytes(0, 0x7f, 1, 0xff, KeySize-1, 0xff),
+		keyWithBytes(0, 0x80),
+		bytes.Repeat([]byte{0xff}, KeySize),
 	}
 	for _, leftBytes := range keys {
 		left := NewKey(leftBytes)
@@ -35,6 +35,14 @@ func TestKeyWordRepresentationPreservesLexicographicOrder(t *testing.T) {
 			}
 		}
 	}
+}
+
+func keyWithBytes(offsetValue ...int) []byte {
+	key := make([]byte, KeySize)
+	for index := 0; index < len(offsetValue); index += 2 {
+		key[offsetValue[index]] = byte(offsetValue[index+1])
+	}
+	return key
 }
 
 func TestNewKeyRejectsWrongLength(t *testing.T) {

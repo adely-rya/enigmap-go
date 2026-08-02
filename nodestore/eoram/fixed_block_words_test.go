@@ -26,8 +26,8 @@ func TestSelectFixedValueBlockWords(t *testing.T) {
 		BlockAddress: 1,
 		Leaf:         2,
 		Data: NodeBlock[FixedValue]{Node: avl.Node[FixedValue]{
-			Key:   avl.NewKey([]byte("current!")),
-			Value: FixedValue{1, 2, 3, 4, 5, 6, 7, 8},
+			Key:   avl.NewKey(fixedTestKey("current!")),
+			Value: FixedValue{1},
 			Left:  avl.Pointer{Address: 3, Position: 4},
 			Right: avl.Pointer{Address: 5, Position: 6},
 			Valid: 1,
@@ -38,8 +38,8 @@ func TestSelectFixedValueBlockWords(t *testing.T) {
 		BlockAddress: 11,
 		Leaf:         12,
 		Data: NodeBlock[FixedValue]{Node: avl.Node[FixedValue]{
-			Key:     avl.NewKey([]byte("candidat")),
-			Value:   FixedValue{8, 7, 6, 5, 4, 3, 2, 1},
+			Key:     avl.NewKey(fixedTestKey("candidat")),
+			Value:   FixedValue{8},
 			Balance: avl.BalanceRight,
 			Left:    avl.Pointer{Address: 13, Position: 14},
 			Right:   avl.Pointer{Address: 15, Position: 16},
@@ -53,6 +53,12 @@ func TestSelectFixedValueBlockWords(t *testing.T) {
 	if got := selectFixedValueBlockWords(current, candidate, 1); !reflect.DeepEqual(got, candidate) {
 		t.Fatalf("condition 1 selected %+v, want candidate %+v", got, candidate)
 	}
+}
+
+func fixedTestKey(value string) []byte {
+	key := make([]byte, avl.KeySize)
+	copy(key, value)
+	return key
 }
 
 func hasPointers(value reflect.Type) bool {
