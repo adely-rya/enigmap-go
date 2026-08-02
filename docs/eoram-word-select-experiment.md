@@ -116,10 +116,11 @@ randomization. Raw `unsafe` word access is guarded by tests that require the
 concrete block to be pointer-free and word-aligned. It is a portability and
 maintenance risk, not an intended reduction in access-pattern protection.
 
-The implementation still uses a dynamic stash, whose current length affects
-loop counts, and Go's compiler/runtime/GC are not designed to guarantee strict
-instruction- or cache-trace obliviousness. Therefore this is not a proof of the
-paper's strongest CPU-trace security model.
+These measurements describe the original 8-byte/8-byte dynamic-stash stage of
+the branch. A later experiment changes the configuration to a 32-byte key,
+one-byte value, and a fixed 179-slot stash; see
+`docs/eoram-fixed-stash-32-1-experiment.md`. Go's compiler/runtime/GC are still
+not designed to guarantee strict instruction- or cache-trace obliviousness.
 
 The experiment-only non-oblivious eviction is explicitly unsafe. Its branches,
 early bucket termination, and direct assignments reduced Put to 0.219 ms at
