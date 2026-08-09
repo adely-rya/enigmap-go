@@ -4,76 +4,104 @@ package enigmap_test
 
 import (
 	"fmt"
-	"os"
+	"path/filepath"
 	"testing"
-	"time"
 
 	enigmap "github.com/adely-rya/enigmap-go"
 	"github.com/adely-rya/enigmap-go/avl"
 	"github.com/adely-rya/enigmap-go/nodestore/eoram"
 )
 
-const (
-	oramLatencyEntryCount = 5000
-)
+const omapSize = 100_000_000
 
 type oramLatencyValue = eoram.FixedValue
 
-func TestORAMFileStoreLatency(t *testing.T) {
-	filePath := t.TempDir() + "/oram-latency.db"
+func BenchmarkORAMFileStoreLatency(b *testing.B) {
+	// b.Run("Initialization", func(b *testing.B) {
+	for index := range b.N {
+		filePath := filepath.Join(
+			b.TempDir(),
+			fmt.Sprintf("oram-latency-%d.db", index),
+		)
 
-	started := time.Now()
-	store, err := enigmap.NewORAM[oramLatencyValue](
-		filePath,
-		oramLatencyEntryCount,
-		[]byte("0123456789abcdef0123456789abcdef"),
-	)
-	if err != nil {
-		t.Fatalf("NewORAM: %v", err)
-	}
-	initialization := time.Since(started)
-	defer store.Close()
-
-	started = time.Now()
-	for index := 0; index < oramLatencyEntryCount; index++ {
-		if err := store.Put(
-			oramLatencyKey(index),
-			oramLatencyData("data", index),
-		); err != nil {
-			t.Fatalf("new Put(%d): %v", index, err)
-		}
-	}
-	newPut := time.Since(started)
-
-	started = time.Now()
-	for index := 0; index < oramLatencyEntryCount; index++ {
-		if err := store.Put(
-			oramLatencyKey(index),
-			oramLatencyData("updated", index),
-		); err != nil {
-			t.Fatalf("overwrite Put(%d): %v", index, err)
-		}
-	}
-	overwrite := time.Since(started)
-
-	started = time.Now()
-	for index := 0; index < oramLatencyEntryCount; index++ {
-		_, found, err := store.Get(oramLatencyKey(index))
+		store, err := enigmap.NewORAM[oramLatencyValue](
+			filePath,
+			omapSize,
+			[]byte("0123456789abcdef0123456789abcdef"),
+		)
 		if err != nil {
-			t.Fatalf("Get(%d): %v", index, err)
+			b.Fatalf("NewORAM: %v", err)
 		}
-		if !found {
-			t.Fatalf("Get(%d): key not found", index)
-		}
-	}
-	get := time.Since(started)
 
-	fmt.Fprintln(os.Stdout)
-	fmt.Fprintf(os.Stdout, "ORAM file latency (%d operations each)\n", oramLatencyEntryCount)
-	fmt.Fprintf(os.Stdout, "initialization: %s\n", initialization)
-	fmt.Fprintf(os.Stdout, "new Put:       %s total, %s/op\n", newPut, newPut/oramLatencyEntryCount)
-	fmt.Fprintf(os.Stdout, "overwrite Put: %s total, %s/op\n", overwrite, overwrite/oramLatencyEntryCount)
-	fmt.Fprintf(os.Stdout, "Get:           %s total, %s/op\n", get, get/oramLatencyEntryCount)
+		b.StopTimer()
+		if err := store.Close(); err != nil {
+			b.Fatalf("Close: %v", err)
+		}
+		b.StartTimer()
+	}
+	// })
+
+	b.Run("Put", func(b *testing.B) {
+		filePath := filepath.Join(b.TempDir(), "oram-latency.db")
+
+		store, err := enigmap.NewORAM[oramLatencyValue](
+			filePath,
+			omapSize,
+			[]byte("0123456789abcdef0123456789abcdef"),
+		)
+		if err != nil {
+			b.Fatalf("NewORAM: %v", err)
+		}
+		defer store.Close()
+
+		b.ResetTimer()
+
+		for index := range b.N {
+			if err := store.Put(
+				oramLatencyKey(index),
+				oramLatencyData("data", index),
+			); err != nil {
+				b.Fatalf("Put(%d): %v", index, err)
+			}
+		}
+	})
+
+	b.Run("Get", func(b *testing.B) {
+		filePath := filepath.Join(b.TempDir(), "oram-latency.db")
+
+		store, err := enigmap.NewORAM[oramLatencyValue](
+			filePath,
+			omapSize,
+			[]byte("0123456789abcdef0123456789abcdef"),
+		)
+		if err != nil {
+			b.Fatalf("NewORAM: %v", err)
+		}
+		defer store.Close()
+
+		for index := 0; index < 10; index++ {
+			if err := store.Put(
+				oramLatencyKey(index),
+				oramLatencyData("data", index),
+			); err != nil {
+				b.Fatalf("setup Put(%d): %v", index, err)
+			}
+		}
+
+		b.ResetTimer()
+
+		for index := range b.N {
+			keyIndex := index % 10
+
+			_, found, err := store.Get(oramLatencyKey(keyIndex))
+			if err != nil {
+				b.Fatalf("Get(%d): %v", keyIndex, err)
+			}
+			if !found {
+				b.Fatalf("Get(%d): key not found", keyIndex)
+			}
+		}
+	})
 }
 
 func oramLatencyKey(index int) []byte {
