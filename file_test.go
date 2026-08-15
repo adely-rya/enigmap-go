@@ -40,7 +40,7 @@ func benchmarkORAMFileStoreLatency(b *testing.B, omapSize int) {
 
 			store, err := enigmap.NewORAM[oramLatencyValue](
 				filePath,
-				omapSize,
+				uint64(omapSize),
 				[]byte("0123456789abcdef0123456789abcdef"),
 			)
 			if err != nil {
@@ -60,7 +60,7 @@ func benchmarkORAMFileStoreLatency(b *testing.B, omapSize int) {
 
 		store, err := enigmap.NewORAM[oramLatencyValue](
 			filePath,
-			omapSize,
+			uint64(omapSize),
 			[]byte("0123456789abcdef0123456789abcdef"),
 		)
 		if err != nil {
@@ -85,7 +85,7 @@ func benchmarkORAMFileStoreLatency(b *testing.B, omapSize int) {
 
 		store, err := enigmap.NewORAM[oramLatencyValue](
 			filePath,
-			omapSize,
+			uint64(omapSize),
 			[]byte("0123456789abcdef0123456789abcdef"),
 		)
 		if err != nil {
