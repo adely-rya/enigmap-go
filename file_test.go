@@ -11,7 +11,7 @@ import (
 	"github.com/adely-rya/enigmap-go/nodestore/eoram"
 )
 
-const omapSize = 100_000_00
+const omapSize = 100_000
 
 type oramLatencyValue = eoram.FixedValue
 

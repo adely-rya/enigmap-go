@@ -12,8 +12,6 @@ import (
 	"github.com/adely-rya/oram/storage"
 )
 
-const oramMemoryBenchmarkWorkingSetSize = 10
-
 // BenchmarkORAMMemoryStoreLatency measures the same ENIGMAP AVL + Path ORAM
 // stack as the file-backed benchmark, but stores physical ORAM buckets directly
 // in storage.MemoryStorage. AES-GCM and filesystem I/O are intentionally excluded.
@@ -53,16 +51,16 @@ func BenchmarkORAMMemoryStoreLatency(b *testing.B) {
 		store := newPopulatedMemoryBackedORAM(
 			b,
 			omapSize,
-			oramMemoryBenchmarkWorkingSetSize,
+			omapSize,
 		)
-		keys := makeORAMBenchmarkKeys(oramMemoryBenchmarkWorkingSetSize)
-		values := makeORAMBenchmarkValues("updated", oramMemoryBenchmarkWorkingSetSize)
+		keys := makeORAMBenchmarkKeys(omapSize)
+		values := makeORAMBenchmarkValues("updated", omapSize)
 
 		b.ReportAllocs()
 		b.ResetTimer()
 
 		for index := range b.N {
-			keyIndex := index % oramMemoryBenchmarkWorkingSetSize
+			keyIndex := index % omapSize
 			if err := store.Put(keys[keyIndex], values[keyIndex]); err != nil {
 				b.Fatalf("overwrite Put(%d): %v", keyIndex, err)
 			}
@@ -73,15 +71,15 @@ func BenchmarkORAMMemoryStoreLatency(b *testing.B) {
 		store := newPopulatedMemoryBackedORAM(
 			b,
 			omapSize,
-			oramMemoryBenchmarkWorkingSetSize,
+			omapSize,
 		)
-		keys := makeORAMBenchmarkKeys(oramMemoryBenchmarkWorkingSetSize)
+		keys := makeORAMBenchmarkKeys(omapSize)
 
 		b.ReportAllocs()
 		b.ResetTimer()
 
 		for index := range b.N {
-			keyIndex := index % oramMemoryBenchmarkWorkingSetSize
+			keyIndex := index % omapSize
 			_, found, err := store.Get(keys[keyIndex])
 			if err != nil {
 				b.Fatalf("Get(%d): %v", keyIndex, err)
