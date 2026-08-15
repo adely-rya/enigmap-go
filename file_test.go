@@ -8,38 +8,37 @@ import (
 	"testing"
 
 	enigmap "github.com/adely-rya/enigmap-go"
-	"github.com/adely-rya/enigmap-go/avl"
 	"github.com/adely-rya/enigmap-go/nodestore/eoram"
 )
 
-const omapSize = 100_000
+const omapSize = 100_000_00
 
 type oramLatencyValue = eoram.FixedValue
 
 func BenchmarkORAMFileStoreLatency(b *testing.B) {
-	// b.Run("Initialization", func(b *testing.B) {
-	for index := range b.N {
-		filePath := filepath.Join(
-			b.TempDir(),
-			fmt.Sprintf("oram-latency-%d.db", index),
-		)
+	b.Run("Initialization", func(b *testing.B) {
+		for index := range b.N {
+			filePath := filepath.Join(
+				b.TempDir(),
+				fmt.Sprintf("oram-latency-%d.db", index),
+			)
 
-		store, err := enigmap.NewORAM[oramLatencyValue](
-			filePath,
-			omapSize,
-			[]byte("0123456789abcdef0123456789abcdef"),
-		)
-		if err != nil {
-			b.Fatalf("NewORAM: %v", err)
-		}
+			store, err := enigmap.NewORAM[oramLatencyValue](
+				filePath,
+				omapSize,
+				[]byte("0123456789abcdef0123456789abcdef"),
+			)
+			if err != nil {
+				b.Fatalf("NewORAM: %v", err)
+			}
 
-		b.StopTimer()
-		if err := store.Close(); err != nil {
-			b.Fatalf("Close: %v", err)
+			b.StopTimer()
+			if err := store.Close(); err != nil {
+				b.Fatalf("Close: %v", err)
+			}
+			b.StartTimer()
 		}
-		b.StartTimer()
-	}
-	// })
+	})
 
 	b.Run("Put", func(b *testing.B) {
 		filePath := filepath.Join(b.TempDir(), "oram-latency.db")
@@ -102,16 +101,4 @@ func BenchmarkORAMFileStoreLatency(b *testing.B) {
 			}
 		}
 	})
-}
-
-func oramLatencyKey(index int) []byte {
-	key := make([]byte, avl.KeySize)
-	copy(key, fmt.Sprintf("key-%08d", index))
-	return key
-}
-
-func oramLatencyData(prefix string, index int) oramLatencyValue {
-	var value oramLatencyValue
-	copy(value[:], fmt.Sprintf("%s-%08d", prefix, index))
-	return value
 }
