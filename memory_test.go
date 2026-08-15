@@ -39,11 +39,11 @@ func benchmarkORAMMemoryStoreLatency(b *testing.B, omapSize int) {
 		b.ResetTimer()
 
 		for index := range b.N {
+			b.StopTimer()
 			if index > 0 && index%omapSize == 0 {
-				b.StopTimer()
 				store = newMemoryBackedORAM(b, omapSize)
-				b.StartTimer()
 			}
+			b.StartTimer()
 
 			keyIndex := index % omapSize
 			if err := store.Put(keys[keyIndex], values[keyIndex]); err != nil {
