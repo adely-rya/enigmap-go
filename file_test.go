@@ -11,11 +11,26 @@ import (
 	"github.com/adely-rya/enigmap-go/nodestore/eoram"
 )
 
-const omapSize = 100_000
+var omapBenchmarkSizes = [...]struct {
+	name string
+	size int
+}{
+	{name: "2^21", size: 1 << 21},
+	{name: "2^24", size: 1 << 24},
+	{name: "2^27", size: 1 << 27},
+}
 
 type oramLatencyValue = eoram.FixedValue
 
 func BenchmarkORAMFileStoreLatency(b *testing.B) {
+	for _, benchmarkSize := range omapBenchmarkSizes {
+		b.Run(benchmarkSize.name, func(b *testing.B) {
+			benchmarkORAMFileStoreLatency(b, benchmarkSize.size)
+		})
+	}
+}
+
+func benchmarkORAMFileStoreLatency(b *testing.B, omapSize int) {
 	b.Run("Initialization", func(b *testing.B) {
 		for index := range b.N {
 			filePath := filepath.Join(

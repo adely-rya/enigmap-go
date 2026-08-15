@@ -12,10 +12,15 @@ import (
 	"github.com/adely-rya/oram/storage"
 )
 
-// BenchmarkORAMMemoryStoreLatency measures the same ENIGMAP AVL + Path ORAM
-// stack as the file-backed benchmark, but stores physical ORAM buckets directly
-// in storage.MemoryStorage. AES-GCM and filesystem I/O are intentionally excluded.
 func BenchmarkORAMMemoryStoreLatency(b *testing.B) {
+	for _, benchmarkSize := range omapBenchmarkSizes {
+		b.Run(benchmarkSize.name, func(b *testing.B) {
+			benchmarkORAMMemoryStoreLatency(b, benchmarkSize.size)
+		})
+	}
+}
+
+func benchmarkORAMMemoryStoreLatency(b *testing.B, omapSize int) {
 	b.Run("Initialization", func(b *testing.B) {
 		b.ReportAllocs()
 
