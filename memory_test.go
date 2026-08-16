@@ -128,7 +128,7 @@ func newMemoryBackedORAM(
 	largeBucketStorage, err := eoram.NewLargeBucketStorage[eoram.NodeBlock[oramLatencyValue]](
 		memoryStorage,
 		layout,
-		eoram.DefaultLargeBucketCacheCapacity,
+		0,
 	)
 	if err != nil {
 		b.Fatalf("NewLargeBucketStorage: %v", err)

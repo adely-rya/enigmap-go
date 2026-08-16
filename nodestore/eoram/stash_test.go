@@ -217,3 +217,213 @@ func TestStashEvictToPathOnlyPlacesCompatibleBlocks(t *testing.T) {
 		t.Fatalf("root block address = %d, want 2", path[0][0].BlockAddress)
 	}
 }
+
+func TestCtLessUint64(t *testing.T) {
+	max := ^uint64(0)
+	tests := []struct {
+		left  uint64
+		right uint64
+		want  int
+	}{
+		{left: 0, right: 0, want: 0},
+		{left: 0, right: 1, want: 1},
+		{left: 1, right: 0, want: 0},
+		{left: max, right: 0, want: 0},
+		{left: 0, right: max, want: 1},
+		{left: max - 1, right: max, want: 1},
+		{left: max, right: max - 1, want: 0},
+	}
+
+	for _, test := range tests {
+		if got := ctLessUint64(test.left, test.right); got != test.want {
+			t.Fatalf(
+				"ctLessUint64(%d, %d) = %d, want %d",
+				test.left,
+				test.right,
+				got,
+				test.want,
+			)
+		}
+	}
+}
+
+func TestFixedValueAddPathConcatenatesWorkBuffer(t *testing.T) {
+	stash := Stash[NodeBlock[FixedValue]]{
+		blocks: []StashedBlock[NodeBlock[FixedValue]]{
+			Block[NodeBlock[FixedValue]]{
+				BlockAddress: 1,
+				Leaf:         0,
+				Valid:        1,
+			}.MakeStashedBlock(1),
+			{},
+			{},
+		},
+		capacity:      3,
+		fixedCapacity: true,
+	}
+	path := []Bucket[NodeBlock[FixedValue]]{
+		{
+			{BlockAddress: 10, Leaf: 0, Valid: 1},
+			{BlockAddress: 11, Leaf: 1, Valid: 1},
+		},
+		{
+			{BlockAddress: 12, Leaf: 2, Valid: 1},
+			{},
+		},
+	}
+
+	if got := stash.AddPath(path, 2); got != 1 {
+		t.Fatalf("AddPath = %d, want 1", got)
+	}
+	if got, want := len(stash.blocks), 3+len(path)*2; got != want {
+		t.Fatalf("work buffer length = %d, want %d", got, want)
+	}
+	if stash.blocks[0].Block.BlockAddress != 1 || stash.blocks[0].Sticky != 1 {
+		t.Fatalf("old stash prefix changed: %+v", stash.blocks[0])
+	}
+
+	wantAddresses := []BlockAddress{10, 11, 12, 0}
+	for index, want := range wantAddresses {
+		entry := stash.blocks[stash.capacity+index]
+		if entry.Block.BlockAddress != want {
+			t.Fatalf(
+				"path work entry %d address = %d, want %d",
+				index,
+				entry.Block.BlockAddress,
+				want,
+			)
+		}
+		if entry.Sticky != 0 {
+			t.Fatalf("path work entry %d Sticky = %d, want 0", index, entry.Sticky)
+		}
+	}
+}
+
+func TestFixedValueSortEvictionPreservesBlocksAndSticky(t *testing.T) {
+	const (
+		capacity   = 5
+		pathLength = 3
+		bucketSize = 1
+		targetLeaf = Leaf(2)
+	)
+
+	stash := Stash[NodeBlock[FixedValue]]{
+		blocks: []StashedBlock[NodeBlock[FixedValue]]{
+			Block[NodeBlock[FixedValue]]{
+				BlockAddress: 1,
+				Leaf:         2,
+				Valid:        1,
+			}.MakeStashedBlock(1),
+			Block[NodeBlock[FixedValue]]{
+				BlockAddress: 2,
+				Leaf:         2,
+				Valid:        1,
+			}.MakeStashedBlock(0),
+			Block[NodeBlock[FixedValue]]{
+				BlockAddress: 3,
+				Leaf:         0,
+				Valid:        1,
+			}.MakeStashedBlock(0),
+			{},
+			{},
+		},
+		capacity:      capacity,
+		fixedCapacity: true,
+	}
+	pathIn := []Bucket[NodeBlock[FixedValue]]{
+		{{BlockAddress: 4, Leaf: 2, Valid: 1}},
+		{{BlockAddress: 5, Leaf: 3, Valid: 1}},
+		{{}},
+	}
+	if got := stash.AddPath(pathIn, bucketSize); got != 1 {
+		t.Fatalf("AddPath = %d, want 1", got)
+	}
+
+	path := stash.EvictToPath(targetLeaf, pathLength, bucketSize)
+	if len(stash.blocks) != capacity {
+		t.Fatalf("stash length after eviction = %d, want %d", len(stash.blocks), capacity)
+	}
+
+	seen := make(map[BlockAddress]int)
+	validPathBlocks := 0
+	for depth := 0; depth < pathLength; depth++ {
+		block := path[depth][0]
+		if block.Valid == 0 {
+			continue
+		}
+		validPathBlocks++
+		if block.BlockAddress == 1 {
+			t.Fatalf("sticky block was evicted to depth %d", depth)
+		}
+
+		shift := uint(pathLength - 1 - depth)
+		if depth != 0 && uint64(block.Leaf)>>shift != uint64(targetLeaf)>>shift {
+			t.Fatalf(
+				"block %d with leaf %d is incompatible with path depth %d",
+				block.BlockAddress,
+				block.Leaf,
+				depth,
+			)
+		}
+		seen[block.BlockAddress]++
+	}
+	if validPathBlocks != pathLength*bucketSize {
+		t.Fatalf("valid path blocks = %d, want %d", validPathBlocks, pathLength*bucketSize)
+	}
+
+	stickyFound := false
+	for _, entry := range stash.blocks {
+		if entry.Block.Valid == 0 {
+			continue
+		}
+		seen[entry.Block.BlockAddress]++
+		if entry.Block.BlockAddress == 1 {
+			stickyFound = true
+			if entry.Sticky != 1 {
+				t.Fatalf("sticky block Sticky = %d, want 1", entry.Sticky)
+			}
+		}
+	}
+	if !stickyFound {
+		t.Fatal("sticky block missing from final stash")
+	}
+
+	for _, address := range []BlockAddress{1, 2, 3, 4, 5} {
+		if seen[address] != 1 {
+			t.Fatalf("block %d occurrence count = %d, want 1", address, seen[address])
+		}
+	}
+}
+
+func TestFixedValueNonObliviousEvictionRestoresFixedCapacity(t *testing.T) {
+	stash := Stash[NodeBlock[FixedValue]]{
+		blocks: []StashedBlock[NodeBlock[FixedValue]]{
+			Block[NodeBlock[FixedValue]]{
+				BlockAddress: 1,
+				Leaf:         0,
+				Valid:        1,
+			}.MakeStashedBlock(1),
+			{},
+		},
+		capacity:      2,
+		fixedCapacity: true,
+	}
+	pathIn := []Bucket[NodeBlock[FixedValue]]{
+		{{BlockAddress: 2, Leaf: 0, Valid: 1}},
+	}
+	if got := stash.AddPath(pathIn, 1); got != 1 {
+		t.Fatalf("AddPath = %d, want 1", got)
+	}
+	if len(stash.blocks) != 3 {
+		t.Fatalf("work buffer length = %d, want 3", len(stash.blocks))
+	}
+
+	_, _ = stash.EvictToPathNonOblivious(0, 1, 1)
+	if len(stash.blocks) != stash.capacity {
+		t.Fatalf(
+			"stash length after non-oblivious eviction = %d, want %d",
+			len(stash.blocks),
+			stash.capacity,
+		)
+	}
+}
