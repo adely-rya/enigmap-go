@@ -313,7 +313,8 @@ func (t *Tree[V]) Put(key []byte, value V) error {
 	t.root.Position = currentNewPosition
 	parentID := Pointer{}
 	insertionPointFound := 0 //挿入ポイント判定
-	firstPassAddresses := make([]NodeID, t.maxDepth)
+	var firstPassAddressBuffer [maxAVLDepth]NodeID
+	firstPassAddresses := firstPassAddressBuffer[:t.maxDepth]
 
 	for depth := 0; depth < t.maxDepth; depth++ {
 		firstPassAddresses[depth] = currentID.Address
@@ -565,7 +566,8 @@ func (t *Tree[V]) Put(key []byte, value V) error {
 		return err
 	}
 
-	secondPassLeaves := make([]ORAMPosition, t.maxDepth+1)
+	var secondPassLeafBuffer [maxAVLDepth + 1]ORAMPosition
+	secondPassLeaves := secondPassLeafBuffer[:t.maxDepth+1]
 	for depth := 0; depth < len(secondPassLeaves); depth++ {
 		secondPassLeaves[depth], err = t.store.NewPosition()
 		if err != nil {

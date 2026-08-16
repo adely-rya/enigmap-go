@@ -299,6 +299,41 @@ func TestFixedValueAddPathConcatenatesWorkBuffer(t *testing.T) {
 	}
 }
 
+func TestFixedValueAddPathReusesReservedBackingBuffer(t *testing.T) {
+	const (
+		stashCapacity = 3
+		bucketSize    = 2
+	)
+	path := []Bucket[NodeBlock[FixedValue]]{
+		{
+			{BlockAddress: 10, Leaf: 0, Valid: 1},
+			{BlockAddress: 11, Leaf: 1, Valid: 1},
+		},
+		{
+			{BlockAddress: 12, Leaf: 2, Valid: 1},
+			{},
+		},
+	}
+	blocks := make(
+		[]StashedBlock[NodeBlock[FixedValue]],
+		stashCapacity,
+		stashCapacity+len(path)*bucketSize,
+	)
+	stash := Stash[NodeBlock[FixedValue]]{
+		blocks:        blocks,
+		capacity:      stashCapacity,
+		fixedCapacity: true,
+	}
+	backingStart := &stash.blocks[0]
+
+	if got := stash.AddPath(path, bucketSize); got != 1 {
+		t.Fatalf("AddPath = %d, want 1", got)
+	}
+	if &stash.blocks[0] != backingStart {
+		t.Fatal("AddPath replaced the reserved stash backing buffer")
+	}
+}
+
 func TestFixedValueSortEvictionPreservesBlocksAndSticky(t *testing.T) {
 	const (
 		capacity   = 5

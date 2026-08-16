@@ -39,11 +39,20 @@ func NewKey(src []byte) Key {
 
 func (k Key) Bytes() []byte {
 	dst := make([]byte, KeySize)
+	k.CopyBytes(dst)
+	return dst
+}
+
+// CopyBytes writes the fixed-size key representation into dst without
+// allocating. Bytes remains available for callers that need an owned slice.
+func (k Key) CopyBytes(dst []byte) {
+	if len(dst) != KeySize {
+		panic("key destination length must equal KeySize")
+	}
 	for index, word := range k.words {
 		start := index * 8
 		binary.BigEndian.PutUint64(dst[start:start+8], word)
 	}
-	return dst
 }
 
 func (k Key) Len() int {

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"math/bits"
 	"time"
 
 	"github.com/adely-rya/enigmap-go/avl"
@@ -44,9 +45,11 @@ type accessState struct {
 //
 // T is the selectable payload stored in each ORAM block.
 type Client[T core.Selectable[T]] struct {
-	server OramServer[Bucket[NodeBlock[T]], core.IO[Bucket[NodeBlock[T]]]]
-	stash  Stash[NodeBlock[T]]
-	random io.Reader
+	server      OramServer[Bucket[NodeBlock[T]], core.IO[Bucket[NodeBlock[T]]]]
+	stash       Stash[NodeBlock[T]]
+	random      io.Reader
+	randomBytes [8]byte
+	pathScratch []Bucket[NodeBlock[T]]
 
 	bucketSize           int
 	nextFreeBlock        BlockAddress
@@ -106,10 +109,29 @@ func NewOramClientWithStashSize[T core.Selectable[T]](
 		return nil, fmt.Errorf("eoram: stash size must be positive: %d", stashSize)
 	}
 
+	// The FixedValue path temporarily appends one complete ORAM path to the
+	// fixed stash between BeginAccess and FinishAccess. Reserve that public
+	// maximum once so AddPath can reslice the existing backing store instead of
+	// allocating a new heap buffer on every ORAM access.
+	stashBackingCapacity := stashSize
+	var zero T
+	if _, fixedValue := any(zero).(FixedValue); fixedValue {
+		maxInt := int(^uint(0) >> 1)
+		pathLength := bits.Len64(server.LeafCount())
+		if pathLength > 0 && bucketSize > maxInt/pathLength {
+			return nil, fmt.Errorf("eoram: path backing capacity overflow")
+		}
+		pathBlockCapacity := pathLength * bucketSize
+		if stashSize > maxInt-pathBlockCapacity {
+			return nil, fmt.Errorf("eoram: stash backing capacity overflow")
+		}
+		stashBackingCapacity += pathBlockCapacity
+	}
+
 	client := &Client[T]{
 		server: server,
 		stash: Stash[NodeBlock[T]]{
-			blocks:        make([]StashedBlock[NodeBlock[T]], stashSize),
+			blocks:        make([]StashedBlock[NodeBlock[T]], stashSize, stashBackingCapacity),
 			capacity:      stashSize,
 			fixedCapacity: true,
 		},
@@ -120,6 +142,10 @@ func NewOramClientWithStashSize[T core.Selectable[T]](
 			phase: accessReady,
 		},
 	}
+	client.pathScratch = makeBucketPath[NodeBlock[T]](
+		bits.Len64(server.LeafCount()),
+		bucketSize,
+	)
 	if err := client.initializeTree(); err != nil {
 		return nil, err
 	}
@@ -134,12 +160,11 @@ func (client *Client[T]) NewPosition() (avl.ORAMPosition, error) {
 		client.stats.NewPositionTime += time.Since(started)
 		client.stats.NewPositions++
 	}()
-	var randomBytes [8]byte
-	if _, err := io.ReadFull(client.random, randomBytes[:]); err != nil {
+	if _, err := io.ReadFull(client.random, client.randomBytes[:]); err != nil {
 		return 0, err
 	}
 
-	randomValue := binary.LittleEndian.Uint64(randomBytes[:])
+	randomValue := binary.LittleEndian.Uint64(client.randomBytes[:])
 	return avl.ORAMPosition(
 		randomValue & (client.server.LeafCount() - 1),
 	), nil
@@ -156,7 +181,7 @@ func (client *Client[T]) BeginAccess(pointer avl.Pointer, newLeaf avl.ORAMPositi
 
 	oldLeaf := Leaf(pointer.Position)
 	started := time.Now()
-	path, err := client.server.ReadPath(oldLeaf)
+	path, err := readBucketPathInto(&client.server, oldLeaf, client.pathScratch)
 	client.stats.ReadPathTime += time.Since(started)
 	if err != nil {
 		return zeroNode, zeroToken, err
@@ -233,7 +258,8 @@ func (client *Client[T]) FinishAccess(token avl.AccessToken, node avl.Node[T]) e
 	var path []Bucket[NodeBlock[T]]
 	if client.nonObliviousEviction {
 		var visits uint64
-		path, visits = client.stash.EvictToPathNonOblivious(
+		path, visits = client.stash.EvictToPathNonObliviousInto(
+			client.pathScratch,
 			client.access.oldLeaf,
 			client.access.pathLength,
 			client.bucketSize,
@@ -245,7 +271,8 @@ func (client *Client[T]) FinishAccess(token avl.AccessToken, node avl.Node[T]) e
 		client.stats.EvictBlockSelects += uint64(
 			client.access.pathLength * evictStashLength * client.bucketSize,
 		)
-		path = client.stash.EvictToPath(
+		path = client.stash.EvictToPathInto(
+			client.pathScratch,
 			client.access.oldLeaf,
 			client.access.pathLength,
 			client.bucketSize,
@@ -254,7 +281,7 @@ func (client *Client[T]) FinishAccess(token avl.AccessToken, node avl.Node[T]) e
 	client.stats.EvictToPathTime += time.Since(started)
 	client.stats.UnpinStashScans += uint64(len(client.stash.blocks))
 	started = time.Now()
-	if err := client.server.WritePath(path, client.access.oldLeaf); err != nil {
+	if err := writeBucketPathFromScratch(&client.server, path, client.access.oldLeaf); err != nil {
 		client.stats.WritePathTime += time.Since(started)
 		return err
 	}
@@ -273,6 +300,16 @@ func (client *Client[T]) FinishAccess(token avl.AccessToken, node avl.Node[T]) e
 	client.access = accessState{phase: accessReady}
 
 	return nil
+}
+
+func makeBucketPath[T core.Selectable[T]](pathLength int, bucketSize int) []Bucket[T] {
+	path := make([]Bucket[T], pathLength)
+	blocks := make([]Block[T], pathLength*bucketSize)
+	for depth := 0; depth < pathLength; depth++ {
+		start := depth * bucketSize
+		path[depth] = blocks[start : start+bucketSize]
+	}
+	return path
 }
 
 func (client *Client[T]) Stats() ClientStats { return client.stats }

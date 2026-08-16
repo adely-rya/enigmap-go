@@ -4,6 +4,7 @@ import (
 	"crypto/subtle"
 	"testing"
 
+	"github.com/adely-rya/enigmap-go/avl"
 	"github.com/adely-rya/oram/core"
 )
 
@@ -58,6 +59,48 @@ func TestBucketSerializationRoundTrip(t *testing.T) {
 		t.Fatalf("Deserialize: %v", err)
 	}
 	decoded := decodedValue.(Bucket[serializablePayload])
+	for index := range bucket {
+		if decoded[index] != bucket[index] {
+			t.Fatalf("decoded block %d = %+v, want %+v", index, decoded[index], bucket[index])
+		}
+	}
+}
+
+func TestFixedValueBucketSerializationRoundTrip(t *testing.T) {
+	keyBytes := make([]byte, avl.KeySize)
+	for index := range keyBytes {
+		keyBytes[index] = byte(index + 1)
+	}
+	var value FixedValue
+	for index := range value {
+		value[index] = byte(0x80 + index)
+	}
+	bucket := make(Bucket[NodeBlock[FixedValue]], BucketSize)
+	bucket[1] = Block[NodeBlock[FixedValue]]{
+		BlockAddress: 91,
+		Leaf:         12,
+		Valid:        1,
+		Data: NodeBlock[FixedValue]{
+			Node: avl.Node[FixedValue]{
+				Key:     avl.NewKey(keyBytes),
+				Value:   value,
+				Balance: avl.BalanceRight,
+				Left:    avl.Pointer{Address: 7, Position: 8},
+				Right:   avl.Pointer{Address: 9, Position: 10},
+				Valid:   1,
+			},
+		},
+	}
+
+	encoded, err := bucket.Serialize()
+	if err != nil {
+		t.Fatalf("Serialize: %v", err)
+	}
+	decodedValue, err := bucket.Deserialize(encoded)
+	if err != nil {
+		t.Fatalf("Deserialize: %v", err)
+	}
+	decoded := decodedValue.(Bucket[NodeBlock[FixedValue]])
 	for index := range bucket {
 		if decoded[index] != bucket[index] {
 			t.Fatalf("decoded block %d = %+v, want %+v", index, decoded[index], bucket[index])

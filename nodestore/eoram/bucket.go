@@ -4,6 +4,7 @@ import (
 	"encoding/binary"
 	"fmt"
 
+	"github.com/adely-rya/enigmap-go/avl"
 	"github.com/adely-rya/enigmap-go/config"
 	"github.com/adely-rya/oram/core"
 )
@@ -104,6 +105,11 @@ func encodeBlock[T core.Selectable[T]](
 		)
 	}
 
+	if fixed, ok := any(block).(Block[NodeBlock[FixedValue]]); ok {
+		encodeFixedValueBlock(encoded, fixed)
+		return nil
+	}
+
 	payload, ok := any(block.Data).(core.Serializable)
 	if !ok {
 		return fmt.Errorf("block payload does not implement core.Serializable")
@@ -139,6 +145,14 @@ func decodeBlock[T core.Selectable[T]](encoded []byte) (Block[T], error) {
 	}
 
 	var zeroPayload T
+	if _, ok := any(zeroPayload).(NodeBlock[FixedValue]); ok {
+		fixed, err := decodeFixedValueBlock(encoded)
+		if err != nil {
+			return zeroBlock, err
+		}
+		return any(fixed).(Block[T]), nil
+	}
+
 	payload, ok := any(zeroPayload).(core.Serializable)
 	if !ok {
 		return zeroBlock, fmt.Errorf("block payload does not implement core.Serializable")
@@ -157,5 +171,55 @@ func decodeBlock[T core.Selectable[T]](encoded []byte) (Block[T], error) {
 		Leaf:         Leaf(binary.LittleEndian.Uint64(encoded[8:16])),
 		Valid:        int(int64(binary.LittleEndian.Uint64(encoded[16:24]))),
 		Data:         data,
+	}, nil
+}
+
+func encodeFixedValueBlock(
+	encoded []byte,
+	block Block[NodeBlock[FixedValue]],
+) {
+	binary.LittleEndian.PutUint64(encoded[0:8], uint64(block.BlockAddress))
+	binary.LittleEndian.PutUint64(encoded[8:16], uint64(block.Leaf))
+	binary.LittleEndian.PutUint64(encoded[16:24], uint64(int64(block.Valid)))
+
+	nodeEncoded := encoded[serializedBlockHeaderSize:]
+	node := block.Data.Node
+	node.Key.CopyBytes(nodeEncoded[:avl.KeySize])
+	copy(nodeEncoded[avl.KeySize:KeyValueSize], node.Value[:])
+	nodeEncoded[serializedBalanceOffset] = byte(node.Balance)
+	encodePointer(nodeEncoded[serializedLeftOffset:serializedRightOffset], node.Left)
+	encodePointer(nodeEncoded[serializedRightOffset:serializedNodeValidOffset], node.Right)
+	nodeEncoded[serializedNodeValidOffset] = node.Valid
+}
+
+func decodeFixedValueBlock(
+	encoded []byte,
+) (Block[NodeBlock[FixedValue]], error) {
+	var zero Block[NodeBlock[FixedValue]]
+	if len(encoded) != serializedBlockSize {
+		return zero, fmt.Errorf(
+			"serialized block size mismatch: got=%d want=%d",
+			len(encoded),
+			serializedBlockSize,
+		)
+	}
+
+	nodeEncoded := encoded[serializedBlockHeaderSize:]
+	var value FixedValue
+	copy(value[:], nodeEncoded[avl.KeySize:KeyValueSize])
+	return Block[NodeBlock[FixedValue]]{
+		BlockAddress: BlockAddress(binary.LittleEndian.Uint64(encoded[0:8])),
+		Leaf:         Leaf(binary.LittleEndian.Uint64(encoded[8:16])),
+		Valid:        int(int64(binary.LittleEndian.Uint64(encoded[16:24]))),
+		Data: NodeBlock[FixedValue]{
+			Node: avl.Node[FixedValue]{
+				Key:     avl.NewKey(nodeEncoded[:avl.KeySize]),
+				Value:   value,
+				Balance: avl.Balance(nodeEncoded[serializedBalanceOffset]),
+				Left:    decodePointer(nodeEncoded[serializedLeftOffset:serializedRightOffset]),
+				Right:   decodePointer(nodeEncoded[serializedRightOffset:serializedNodeValidOffset]),
+				Valid:   nodeEncoded[serializedNodeValidOffset],
+			},
+		},
 	}, nil
 }

@@ -2,6 +2,11 @@ package avl
 
 import "math/bits"
 
+// maxAVLDepth is the largest value calculateMaxDepth can produce for a
+// uint64 node bound. It lets Put keep its public-size planning buffers on the
+// goroutine stack instead of allocating slices on every call.
+const maxAVLDepth = 64 + 64/2 + 1
+
 type Tree[V any] struct {
 	root     Pointer
 	fake     Pointer

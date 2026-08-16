@@ -270,9 +270,10 @@ func (stash *Stash[T]) AddPath(path []Bucket[T], bucketSize int) int {
 }
 
 // addFixedValuePath concatenates the current fixed-capacity stash and the
-// complete path into one public-size work buffer. The path is deliberately not
-// merged into individual stash slots here: the later sort-based eviction does
-// all placement and compaction in one batch.
+// complete path into one public-size work buffer. The normal Client
+// constructor reserves this tail capacity once, so the hot path only reslices
+// the existing backing array. A heap growth remains as a compatibility
+// fallback for manually constructed or unusually large profiling stashes.
 func addFixedValuePath(
 	stash *Stash[NodeBlock[FixedValue]],
 	path []Bucket[NodeBlock[FixedValue]],
@@ -287,18 +288,26 @@ func addFixedValuePath(
 	}
 
 	pathBlockCount := len(path) * bucketSize
-	work := make([]StashedBlock[NodeBlock[FixedValue]], baseSize+pathBlockCount)
-	copy(work[:baseSize], stash.blocks)
+	workLength := baseSize + pathBlockCount
+	if workLength < baseSize {
+		return 0
+	}
+	if cap(stash.blocks) < workLength {
+		work := make([]StashedBlock[NodeBlock[FixedValue]], workLength)
+		copy(work[:baseSize], stash.blocks)
+		stash.blocks = work
+	} else {
+		stash.blocks = stash.blocks[:workLength]
+	}
 
 	write := baseSize
 	for depth := 0; depth < len(path); depth++ {
 		for slot := 0; slot < bucketSize; slot++ {
-			work[write] = path[depth][slot].MakeStashedBlock(0)
+			stash.blocks[write] = path[depth][slot].MakeStashedBlock(0)
 			write++
 		}
 	}
 
-	stash.blocks = work
 	return 1
 }
 
@@ -315,6 +324,12 @@ type fixedEvictionEntry struct {
 
 const fixedEvictionEntrySize = int(unsafe.Sizeof(fixedEvictionEntry{}))
 const fixedEvictionEntryWordCount = fixedEvictionEntrySize / 8
+
+// Keep the fixed-sort scratch area below the compiler's large-stack-object
+// threshold. With the current 128-byte entry this provides 768 entries, enough
+// for the default 179-slot stash plus two complete 64-level, Z=4 path regions.
+const fixedEvictionStackBudget = 96 << 10
+const fixedEvictionStackEntryCapacity = fixedEvictionStackBudget / fixedEvictionEntrySize
 
 var _ [-(fixedEvictionEntrySize % 8)]struct{}
 
@@ -539,9 +554,31 @@ func (stash *Stash[T]) EvictToPath(
 	pathLength int,
 	bucketSize int,
 ) []Bucket[T] {
+	return stash.EvictToPathInto(
+		makeBucketPath[T](pathLength, bucketSize),
+		leaf,
+		pathLength,
+		bucketSize,
+	)
+}
+
+// EvictToPathInto is the allocation-free internal path used by Client. The
+// caller supplies fixed public-size scratch storage; the eviction scan and sort
+// schedule is identical to EvictToPath and does not depend on secret data.
+func (stash *Stash[T]) EvictToPathInto(
+	path []Bucket[T],
+	leaf Leaf,
+	pathLength int,
+	bucketSize int,
+) []Bucket[T] {
+	if !preparePathScratch(path, pathLength, bucketSize) {
+		return nil
+	}
+	path = path[:pathLength]
 	if fixedStash, ok := any(stash).(*Stash[NodeBlock[FixedValue]]); ok && stash.fixedCapacity {
-		fixedPath := evictFixedValueToPath(
+		fixedPath := evictFixedValueToPathInto(
 			fixedStash,
+			any(path).([]Bucket[NodeBlock[FixedValue]]),
 			leaf,
 			pathLength,
 			bucketSize,
@@ -549,12 +586,14 @@ func (stash *Stash[T]) EvictToPath(
 		return any(fixedPath).([]Bucket[T])
 	}
 
-	path := make([]Bucket[T], pathLength)
-	blocks := make([]Block[T], pathLength*bucketSize)
-	used := make([]int, bucketSize)
-	for depth := 0; depth < pathLength; depth++ {
-		start := depth * bucketSize
-		path[depth] = blocks[start : start+bucketSize]
+	var stackUsed [BucketSize]int
+	used := stackUsed[:]
+	if bucketSize > len(stackUsed) {
+		// Generic callers may choose a nonstandard Z. The normal ENIGMAP path is
+		// Z=BucketSize and therefore stays allocation-free.
+		used = make([]int, bucketSize)
+	} else {
+		used = used[:bucketSize]
 	}
 
 	for depth := pathLength - 1; depth >= 0; depth-- {
@@ -604,6 +643,26 @@ func (stash *Stash[T]) EvictToPath(
 	return path
 }
 
+func preparePathScratch[T core.Selectable[T]](
+	path []Bucket[T],
+	pathLength int,
+	bucketSize int,
+) bool {
+	if pathLength < 0 || bucketSize < 0 || len(path) < pathLength {
+		return false
+	}
+	var zero Block[T]
+	for depth := 0; depth < pathLength; depth++ {
+		if len(path[depth]) != bucketSize {
+			return false
+		}
+		for slot := 0; slot < bucketSize; slot++ {
+			path[depth][slot] = zero
+		}
+	}
+	return true
+}
+
 // evictFixedValueToPath follows EnigMap's sort-based Path ORAM eviction:
 //
 //  1. tag stash+path blocks by their deepest compatible path level;
@@ -622,12 +681,26 @@ func evictFixedValueToPath(
 	pathLength int,
 	bucketSize int,
 ) []Bucket[NodeBlock[FixedValue]] {
-	path := make([]Bucket[NodeBlock[FixedValue]], pathLength)
-	blocks := make([]Block[NodeBlock[FixedValue]], pathLength*bucketSize)
-	for depth := 0; depth < pathLength; depth++ {
-		start := depth * bucketSize
-		path[depth] = blocks[start : start+bucketSize]
+	return evictFixedValueToPathInto(
+		stash,
+		makeBucketPath[NodeBlock[FixedValue]](pathLength, bucketSize),
+		leaf,
+		pathLength,
+		bucketSize,
+	)
+}
+
+func evictFixedValueToPathInto(
+	stash *Stash[NodeBlock[FixedValue]],
+	path []Bucket[NodeBlock[FixedValue]],
+	leaf Leaf,
+	pathLength int,
+	bucketSize int,
+) []Bucket[NodeBlock[FixedValue]] {
+	if !preparePathScratch(path, pathLength, bucketSize) {
+		return nil
 	}
+	path = path[:pathLength]
 
 	if pathLength == 0 || bucketSize == 0 {
 		return path
@@ -636,7 +709,21 @@ func evictFixedValueToPath(
 	overflowTag := uint64(pathLength)
 	baseSize := len(stash.blocks)
 	pathBlockCount := pathLength * bucketSize
-	work := make([]fixedEvictionEntry, baseSize+pathBlockCount)
+	workLength := baseSize + pathBlockCount
+	if workLength < baseSize {
+		return path
+	}
+
+	var stackWork [fixedEvictionStackEntryCapacity]fixedEvictionEntry
+	var work []fixedEvictionEntry
+	if workLength <= len(stackWork) {
+		work = stackWork[:workLength]
+	} else {
+		// Profile-only custom stash sizes can exceed the bounded stack scratch
+		// area. Preserve their behavior without making the normal hot path pay
+		// a heap allocation.
+		work = make([]fixedEvictionEntry, workLength)
+	}
 
 	// 1) Tag the concatenated old-stash + complete-path work set. Invalid
 	// entries go directly to the overflow tag; sticky entries are valid but are
@@ -754,16 +841,20 @@ func evictFixedValueToPath(
 	// copy is sufficient; no per-block stash search/compaction is needed.
 	capacity := stash.capacity
 	if capacity <= 0 {
-		capacity = baseSize
+		capacity = baseSize - pathBlockCount
 	}
-	newStash := make([]StashedBlock[NodeBlock[FixedValue]], capacity)
 	remainder := work[pathBlockCount:]
 	copyCount := capacity
 	if copyCount > len(remainder) {
 		copyCount = len(remainder)
 	}
+	newStash := stash.blocks[:capacity]
 	for index := 0; index < copyCount; index++ {
 		newStash[index] = remainder[index].stashed
+	}
+	var zero StashedBlock[NodeBlock[FixedValue]]
+	for index := copyCount; index < capacity; index++ {
+		newStash[index] = zero
 	}
 	stash.blocks = newStash
 
@@ -779,12 +870,24 @@ func (stash *Stash[T]) EvictToPathNonOblivious(
 	pathLength int,
 	bucketSize int,
 ) ([]Bucket[T], uint64) {
-	path := make([]Bucket[T], pathLength)
-	blocks := make([]Block[T], pathLength*bucketSize)
-	for depth := 0; depth < pathLength; depth++ {
-		start := depth * bucketSize
-		path[depth] = blocks[start : start+bucketSize]
+	return stash.EvictToPathNonObliviousInto(
+		makeBucketPath[T](pathLength, bucketSize),
+		leaf,
+		pathLength,
+		bucketSize,
+	)
+}
+
+func (stash *Stash[T]) EvictToPathNonObliviousInto(
+	path []Bucket[T],
+	leaf Leaf,
+	pathLength int,
+	bucketSize int,
+) ([]Bucket[T], uint64) {
+	if !preparePathScratch(path, pathLength, bucketSize) {
+		return nil, 0
 	}
+	path = path[:pathLength]
 	var stashVisits uint64
 
 	for depth := pathLength - 1; depth >= 0; depth-- {

@@ -222,3 +222,36 @@ func TestLargeBucketStorageWritesDirtyLRUVictim(t *testing.T) {
 		t.Fatal("dirty eviction did not persist updated bucket")
 	}
 }
+
+func TestLargeBucketStorageReadBatchPreservesNonDefaultBucketSize(t *testing.T) {
+	layout, err := NewLargeBucketLayout(7)
+	if err != nil {
+		t.Fatalf("NewLargeBucketLayout: %v", err)
+	}
+	physical := storage.NewMemoryStorage[LargeBucket[serializablePayload]](
+		layout.PhysicalBucketCount(),
+	)
+	logical, err := NewLargeBucketStorage[serializablePayload](physical, layout, 2)
+	if err != nil {
+		t.Fatalf("NewLargeBucketStorage: %v", err)
+	}
+	const bucketSize = 3
+	if err := logical.Initialize(make(Bucket[serializablePayload], bucketSize)); err != nil {
+		t.Fatalf("Initialize: %v", err)
+	}
+
+	buckets, err := logical.ReadBatch([]uint64{0, 1, 3})
+	if err != nil {
+		t.Fatalf("ReadBatch: %v", err)
+	}
+	for index, bucket := range buckets {
+		if len(bucket) != bucketSize {
+			t.Fatalf("bucket %d length = %d, want %d", index, len(bucket), bucketSize)
+		}
+	}
+
+	buckets[0][0].Valid = 1
+	if buckets[1][0].Valid != 0 {
+		t.Fatal("ReadBatch results unexpectedly alias each other")
+	}
+}

@@ -60,8 +60,8 @@ func (storage *PaddingIO[T]) Read(index uint64) (T, error) {
 		return zero, fmt.Errorf("%w: index=%d size=%d", ErrOutOfRange, index, storage.size)
 	}
 
-	block := make([]byte, BlockSize)
-	if _, err := storage.file.ReadAt(block, int64(index)*BlockSize); err != nil {
+	var block [BlockSize]byte
+	if _, err := storage.file.ReadAt(block[:], int64(index)*BlockSize); err != nil {
 		return zero, fmt.Errorf("paddingio: read block %d: %w", index, err)
 	}
 
@@ -98,9 +98,9 @@ func (storage *PaddingIO[T]) Write(value T, index uint64) error {
 		return fmt.Errorf("%w: got=%d max=%d", ErrDataTooLarge, len(encoded), BlockSize)
 	}
 
-	block := make([]byte, BlockSize)
-	copy(block, encoded)
-	n, err := storage.file.WriteAt(block, int64(index)*BlockSize)
+	var block [BlockSize]byte
+	copy(block[:], encoded)
+	n, err := storage.file.WriteAt(block[:], int64(index)*BlockSize)
 	if err != nil {
 		return fmt.Errorf("paddingio: write block %d: %w", index, err)
 	}

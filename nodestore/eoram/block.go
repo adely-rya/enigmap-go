@@ -31,24 +31,28 @@ const (
 // Serialize encodes the complete AVL node stored in one ORAM block.
 func (block NodeBlock[V]) Serialize() ([]byte, error) {
 	encoded := make([]byte, serializedNodeBlockSize)
-	copy(encoded[:avl.KeySize], block.Node.Key.Bytes())
+	block.Node.Key.CopyBytes(encoded[:avl.KeySize])
 
-	value, ok := any(block.Node.Value).(core.Serializable)
-	if !ok {
-		return nil, fmt.Errorf("eoram: node value does not implement core.Serializable")
+	if fixed, ok := any(block.Node.Value).(FixedValue); ok {
+		copy(encoded[avl.KeySize:KeyValueSize], fixed[:])
+	} else {
+		value, ok := any(block.Node.Value).(core.Serializable)
+		if !ok {
+			return nil, fmt.Errorf("eoram: node value does not implement core.Serializable")
+		}
+		valueBytes, err := value.Serialize()
+		if err != nil {
+			return nil, fmt.Errorf("eoram: serialize node value: %w", err)
+		}
+		if len(valueBytes) != ValueSize {
+			return nil, fmt.Errorf(
+				"eoram: serialized node value size mismatch: got=%d want=%d",
+				len(valueBytes),
+				ValueSize,
+			)
+		}
+		copy(encoded[avl.KeySize:KeyValueSize], valueBytes)
 	}
-	valueBytes, err := value.Serialize()
-	if err != nil {
-		return nil, fmt.Errorf("eoram: serialize node value: %w", err)
-	}
-	if len(valueBytes) != ValueSize {
-		return nil, fmt.Errorf(
-			"eoram: serialized node value size mismatch: got=%d want=%d",
-			len(valueBytes),
-			ValueSize,
-		)
-	}
-	copy(encoded[avl.KeySize:KeyValueSize], valueBytes)
 
 	encoded[serializedBalanceOffset] = byte(block.Node.Balance)
 	encodePointer(encoded[serializedLeftOffset:serializedRightOffset], block.Node.Left)
