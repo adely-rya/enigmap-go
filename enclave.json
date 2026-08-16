@@ -2,11 +2,20 @@
  "exe": "bench.test",
  "key": "private.pem",
  "debug": false,
- "heapSize": 65536,
+ "heapSize": 32768,
  "executableHeap": false,
  "productID": 1,
  "securityVersion": 1,
  "mounts": null,
- "env": null,
+ "env": [
+        {
+            "name": "ENIGMAP_DIAG_STASH_SIZE",
+            "fromHost": true
+        },{
+            "name": "ENIGMAP_DIAG_SEQUENTIAL_POSITION",
+            "fromHost": true
+        }
+
+    ],
  "files": null
 }

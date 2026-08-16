@@ -51,11 +51,13 @@ type Client[T core.Selectable[T]] struct {
 	randomBytes [8]byte
 	pathScratch []Bucket[NodeBlock[T]]
 
-	bucketSize           int
-	nextFreeBlock        BlockAddress
-	access               accessState
-	stats                ClientStats
-	nonObliviousEviction bool
+	bucketSize                 int
+	nextFreeBlock              BlockAddress
+	access                     accessState
+	stats                      ClientStats
+	nonObliviousEviction       bool
+	profileSequentialPositions bool
+	profileNextPosition        uint64
 }
 
 type ClientStats struct {
@@ -156,6 +158,11 @@ func NewOramClientWithStashSize[T core.Selectable[T]](
 // ランダムにリーフを選定する
 func (client *Client[T]) NewPosition() (avl.ORAMPosition, error) {
 	client.stats.NewPositions++
+	if client.profileSequentialPositions {
+		client.profileNextPosition = (client.profileNextPosition + 1) &
+			(client.server.LeafCount() - 1)
+		return avl.ORAMPosition(client.profileNextPosition), nil
+	}
 	if _, err := io.ReadFull(client.random, client.randomBytes[:]); err != nil {
 		return 0, err
 	}
@@ -299,6 +306,22 @@ func (client *Client[T]) Stats() ClientStats { return client.stats }
 // mode. It is intentionally explicit because this weakens strong obliviousness.
 func (client *Client[T]) EnableNonObliviousEvictionForProfile() {
 	client.nonObliviousEviction = true
+}
+
+// EnableSequentialPositionsForProfile replaces random leaf assignment with the
+// public artifact's incrementing-position shortcut. This is only for diagnosing
+// the cost of crypto/rand and MUST NOT be used for security measurements.
+func (client *Client[T]) EnableSequentialPositionsForProfile() {
+	client.profileSequentialPositions = true
+	client.profileNextPosition = 0
+}
+
+// EnableVariableStashForProfile switches the fixed-capacity stash to the
+// variable-length behavior used by the public EnigMap artifact. This is only
+// for diagnosing sort/work-set cost and MUST NOT be used for strong or doubly
+// oblivious security measurements.
+func (client *Client[T]) EnableVariableStashForProfile() {
+	client.stash.enableVariableLengthForProfile()
 }
 
 func (client *Client[T]) validateFinishAccess(token avl.AccessToken) error {

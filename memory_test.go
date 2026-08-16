@@ -4,7 +4,10 @@ package enigmap_test
 
 import (
 	"fmt"
+	"os"
 	"runtime"
+	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/adely-rya/enigmap-go/avl"
@@ -12,7 +15,11 @@ import (
 	"github.com/adely-rya/oram/storage"
 )
 
-const oramMemoryBenchmarkWorkingSetSize = 10
+const (
+	oramMemoryBenchmarkWorkingSetSize = 10
+	diagnosticStashSizeEnv            = "ENIGMAP_DIAG_STASH_SIZE"
+	diagnosticSequentialPositionEnv   = "ENIGMAP_DIAG_SEQUENTIAL_POSITION"
+)
 
 // BenchmarkORAMMemoryStoreLatency measures the same ENIGMAP AVL + Path ORAM
 // stack as the file-backed benchmark, but stores physical ORAM buckets directly
@@ -134,12 +141,42 @@ func newMemoryBackedORAM(
 		b.Fatalf("NewLargeBucketStorage: %v", err)
 	}
 
-	client, err := eoram.NewOramClient[oramLatencyValue](
-		largeBucketStorage,
-		eoram.BucketSize,
-	)
+	var client *eoram.Client[oramLatencyValue]
+	variableStash := false
+	if rawStashSize := os.Getenv(diagnosticStashSizeEnv); rawStashSize != "" {
+		stashSizeText := rawStashSize
+		if strings.HasPrefix(stashSizeText, "variable:") {
+			variableStash = true
+			stashSizeText = strings.TrimPrefix(stashSizeText, "variable:")
+		}
+		stashSize, parseErr := strconv.Atoi(stashSizeText)
+		if parseErr != nil || stashSize <= 0 {
+			b.Fatalf(
+				"%s must be a positive integer or variable:<positive integer>: %q",
+				diagnosticStashSizeEnv,
+				rawStashSize,
+			)
+		}
+		client, err = eoram.NewOramClientWithStashSize[oramLatencyValue](
+			largeBucketStorage,
+			eoram.BucketSize,
+			stashSize,
+		)
+	} else {
+		client, err = eoram.NewOramClient[oramLatencyValue](
+			largeBucketStorage,
+			eoram.BucketSize,
+		)
+	}
 	if err != nil {
 		b.Fatalf("NewOramClient: %v", err)
+	}
+
+	if variableStash {
+		client.EnableVariableStashForProfile()
+	}
+	if os.Getenv(diagnosticSequentialPositionEnv) == "1" {
+		client.EnableSequentialPositionsForProfile()
 	}
 
 	tree, err := avl.NewTree[oramLatencyValue](client, uint64(maxNodes))

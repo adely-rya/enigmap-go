@@ -17,9 +17,10 @@ type StashedBlock[T core.Selectable[T]] struct {
 // Stash holds blocks that have been read from ORAM paths but have not yet been
 // written back.
 type Stash[T core.Selectable[T]] struct {
-	blocks        []StashedBlock[T]
-	capacity      int
-	fixedCapacity bool
+	blocks                []StashedBlock[T]
+	capacity              int
+	fixedCapacity         bool
+	profileVariableLength bool
 }
 
 func (block Block[T]) MakeStashedBlock(sticky int) StashedBlock[T] {
@@ -247,7 +248,10 @@ func (stash *Stash[T]) AddPath(path []Bucket[T], bucketSize int) int {
 	}
 	if !stash.fixedCapacity {
 		required := len(path) * bucketSize
-		if stash.capacity > 0 && len(stash.blocks)+required > stash.capacity {
+		// Normal variable stashes enforce capacity on the whole slice. The
+		// profile-only EnigMap-artifact mode treats capacity as the persistent
+		// stash bound and temporarily appends one complete path beyond it.
+		if !stash.profileVariableLength && stash.capacity > 0 && len(stash.blocks)+required > stash.capacity {
 			return 0
 		}
 		for depth := 0; depth < len(path); depth++ {
@@ -537,6 +541,32 @@ func fixedEvictionShallowness(
 	return selectUint64(overflowTag, tag, eligible)
 }
 
+// enableVariableLengthForProfile switches the fixed public stash into the
+// public artifact's variable-length vector behavior. This intentionally makes
+// the instruction/memory trace depend on the current stash length and therefore
+// MUST NOT be used for strong/doubly-oblivious security measurements.
+//
+// capacity remains the persistent stash bound. AddPath may temporarily append a
+// complete ORAM path beyond that bound, matching the artifact's stash_.push_back
+// behavior before eviction.
+func (stash *Stash[T]) enableVariableLengthForProfile() {
+	write := 0
+	for read := 0; read < len(stash.blocks); read++ {
+		if stash.blocks[read].Block.Valid == 0 {
+			continue
+		}
+		stash.blocks[write] = stash.blocks[read]
+		write++
+	}
+	var zero StashedBlock[T]
+	for index := write; index < len(stash.blocks); index++ {
+		stash.blocks[index] = zero
+	}
+	stash.blocks = stash.blocks[:write]
+	stash.fixedCapacity = false
+	stash.profileVariableLength = true
+}
+
 func (stash *Stash[T]) validBlockCount() int {
 	count := 0
 	for index := 0; index < len(stash.blocks); index++ {
@@ -575,7 +605,8 @@ func (stash *Stash[T]) EvictToPathInto(
 		return nil
 	}
 	path = path[:pathLength]
-	if fixedStash, ok := any(stash).(*Stash[NodeBlock[FixedValue]]); ok && stash.fixedCapacity {
+	if fixedStash, ok := any(stash).(*Stash[NodeBlock[FixedValue]]); ok &&
+		(stash.fixedCapacity || stash.profileVariableLength) {
 		fixedPath := evictFixedValueToPathInto(
 			fixedStash,
 			any(path).([]Bucket[NodeBlock[FixedValue]]),
@@ -836,14 +867,36 @@ func evictFixedValueToPathInto(
 		}
 	}
 
-	// Keep a fixed public stash size. The final tag sort places all real
-	// overflow entries before special overflow dummies, so a straight linear
-	// copy is sufficient; no per-block stash search/compaction is needed.
+	remainder := work[pathBlockCount:]
 	capacity := stash.capacity
 	if capacity <= 0 {
 		capacity = baseSize - pathBlockCount
 	}
-	remainder := work[pathBlockCount:]
+
+	if stash.profileVariableLength {
+		// Profile-only artifact mode: preserve only the real overflow entries.
+		// The final tag sort puts real overflow/sticky entries before invalid
+		// overflow dummies, so this branchful prefix scan reproduces the public
+		// artifact's variable stash_.size() behavior. The branch and resulting
+		// loop bounds intentionally leak stash length; do not use this mode for
+		// doubly-oblivious measurements.
+		newStash := stash.blocks[:0]
+		for index := 0; index < len(remainder); index++ {
+			if remainder[index].stashed.Block.Valid == 0 {
+				break
+			}
+			if capacity > 0 && len(newStash) >= capacity {
+				break
+			}
+			newStash = append(newStash, remainder[index].stashed)
+		}
+		stash.blocks = newStash
+		return path
+	}
+
+	// Keep a fixed public stash size. The final tag sort places all real
+	// overflow entries before special overflow dummies, so a straight linear
+	// copy is sufficient; no per-block stash search/compaction is needed.
 	copyCount := capacity
 	if copyCount > len(remainder) {
 		copyCount = len(remainder)
