@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/adely-rya/oram/core"
+	oramstorage "github.com/adely-rya/oram/storage"
 )
 
 // LargeBucketStorage exposes logical Bucket I/O while storing packed
@@ -357,10 +358,17 @@ func (storage *LargeBucketStorage[T]) loadEntry(
 	}
 	if storage.cacheCapacity == 0 {
 		storage.uncached.physicalIndex = physicalIndex
-		// A generic core.IO.Read may return storage-owned slice backing. Work on
-		// an owned copy so an un-cached update cannot mutate the backing store
-		// before Write is called.
-		storage.uncached.value = cloneLargeBucket(largeBucket)
+		if _, ok := storage.storage.(*oramstorage.MemoryStorage[LargeBucket[T]]); ok {
+			// MemoryStorage.Read returns the stored slice directly. For the all-in-
+			// memory, cache-disabled path, update that backing slice in place and
+			// avoid allocating a full LargeBucket clone on every access.
+			storage.uncached.value = largeBucket
+		} else {
+			// A generic core.IO.Read may return storage-owned slice backing. Work on
+			// an owned copy so an un-cached update cannot mutate the backing store
+			// before Write is called.
+			storage.uncached.value = cloneLargeBucket(largeBucket)
+		}
 		storage.uncached.dirty = false
 		storage.uncached.active = true
 		storage.uncached.newer = -1
