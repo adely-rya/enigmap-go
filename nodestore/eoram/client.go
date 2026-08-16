@@ -155,11 +155,7 @@ func NewOramClientWithStashSize[T core.Selectable[T]](
 
 // ランダムにリーフを選定する
 func (client *Client[T]) NewPosition() (avl.ORAMPosition, error) {
-	started := time.Now()
-	defer func() {
-		client.stats.NewPositionTime += time.Since(started)
-		client.stats.NewPositions++
-	}()
+	client.stats.NewPositions++
 	if _, err := io.ReadFull(client.random, client.randomBytes[:]); err != nil {
 		return 0, err
 	}
@@ -180,16 +176,12 @@ func (client *Client[T]) BeginAccess(pointer avl.Pointer, newLeaf avl.ORAMPositi
 	}
 
 	oldLeaf := Leaf(pointer.Position)
-	started := time.Now()
 	path, err := readBucketPathInto(&client.server, oldLeaf, client.pathScratch)
-	client.stats.ReadPathTime += time.Since(started)
 	if err != nil {
 		return zeroNode, zeroToken, err
 	}
 
-	started = time.Now()
 	added := client.stash.AddPath(path, client.bucketSize)
-	client.stats.AddPathTime += time.Since(started)
 	client.stats.PathBucketsRead += uint64(len(path))
 	client.stats.AddPathBlocks += uint64(len(path) * client.bucketSize)
 	validStashBlocks := client.stash.validBlockCount()
@@ -202,12 +194,10 @@ func (client *Client[T]) BeginAccess(pointer avl.Pointer, newLeaf avl.ORAMPositi
 
 	blockAddress := BlockAddress(pointer.Address)
 	prepareStashLength := len(client.stash.blocks)
-	started = time.Now()
 	value, found := client.stash.PrepareAccess(
 		blockAddress,
 		Leaf(newLeaf),
 	)
-	client.stats.PrepareAccessTime += time.Since(started)
 	client.stats.PrepareStashScans += uint64(prepareStashLength)
 
 	if found == 0 {
@@ -239,12 +229,10 @@ func (client *Client[T]) FinishAccess(token avl.AccessToken, node avl.Node[T]) e
 	}
 
 	updateStashLength := len(client.stash.blocks)
-	started := time.Now()
 	updated := client.stash.UpdateAccessedBlock(
 		client.access.blockAddress,
 		NodeBlock[T]{Node: node},
 	)
-	client.stats.UpdateBlockTime += time.Since(started)
 	client.stats.UpdateStashScans += uint64(updateStashLength)
 	if updated == 0 {
 		return fmt.Errorf(
@@ -254,7 +242,6 @@ func (client *Client[T]) FinishAccess(token avl.AccessToken, node avl.Node[T]) e
 		)
 	}
 
-	started = time.Now()
 	var path []Bucket[NodeBlock[T]]
 	if client.nonObliviousEviction {
 		var visits uint64
@@ -278,18 +265,12 @@ func (client *Client[T]) FinishAccess(token avl.AccessToken, node avl.Node[T]) e
 			client.bucketSize,
 		)
 	}
-	client.stats.EvictToPathTime += time.Since(started)
 	client.stats.UnpinStashScans += uint64(len(client.stash.blocks))
-	started = time.Now()
 	if err := writeBucketPathFromScratch(&client.server, path, client.access.oldLeaf); err != nil {
-		client.stats.WritePathTime += time.Since(started)
 		return err
 	}
-	client.stats.WritePathTime += time.Since(started)
 
-	started = time.Now()
 	unpinned := client.stash.Unpin(client.access.blockAddress)
-	client.stats.UnpinTime += time.Since(started)
 	if unpinned == 0 {
 		return fmt.Errorf(
 			"%w: FinishAccess unpin blockAddress=%d",

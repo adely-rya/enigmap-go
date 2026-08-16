@@ -303,13 +303,10 @@ func (storage *LargeBucketStorage[T]) finishBatchWrite(
 	physicalIndex uint64,
 ) error {
 	if !cached {
-		started := time.Now()
 		if err := storage.storage.Write(entry.value, physicalIndex); err != nil {
-			storage.stats.BackingWriteTime += time.Since(started)
 			storage.stats.BackingWrites++
 			return err
 		}
-		storage.stats.BackingWriteTime += time.Since(started)
 		storage.stats.BackingWrites++
 		return nil
 	}
@@ -342,9 +339,7 @@ func (storage *LargeBucketStorage[T]) loadEntry(
 	}
 
 	storage.stats.Misses++
-	started := time.Now()
 	largeBucket, err := storage.storage.Read(physicalIndex)
-	storage.stats.BackingReadTime += time.Since(started)
 	storage.stats.BackingReads++
 	if err != nil {
 		return nil, false, err
@@ -413,16 +408,13 @@ func (storage *LargeBucketStorage[T]) persistEvictedEntry(
 	entry *largeBucketCacheEntry[T],
 ) error {
 	if entry.dirty {
-		started := time.Now()
 		// The generic core.IO contract does not promise that Write copies slice
 		// backed values. Keep the cache slot reusable by handing the backing
 		// storage an owned clone.
 		if err := storage.storage.Write(cloneLargeBucket(entry.value), entry.physicalIndex); err != nil {
-			storage.stats.BackingWriteTime += time.Since(started)
 			storage.stats.BackingWrites++
 			return err
 		}
-		storage.stats.BackingWriteTime += time.Since(started)
 		storage.stats.BackingWrites++
 		storage.stats.DirtyEvictions++
 	} else {
@@ -488,13 +480,10 @@ func (storage *LargeBucketStorage[T]) Flush() error {
 		if !entry.active || !entry.dirty {
 			continue
 		}
-		started := time.Now()
 		if err := storage.storage.Write(cloneLargeBucket(entry.value), entry.physicalIndex); err != nil {
-			storage.stats.BackingWriteTime += time.Since(started)
 			storage.stats.BackingWrites++
 			return err
 		}
-		storage.stats.BackingWriteTime += time.Since(started)
 		storage.stats.BackingWrites++
 		storage.stats.FlushWrites++
 		entry.dirty = false
