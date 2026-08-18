@@ -9,9 +9,9 @@ import (
 	"github.com/adely-rya/enigmap-go/nodestore/eoram"
 	"github.com/adely-rya/enigmap-go/nodestore/memory"
 	"github.com/adely-rya/enigmap-go/omap"
+	"github.com/adely-rya/enigmap-go/padding"
 	"github.com/adely-rya/oram/core"
 	"github.com/adely-rya/oram/security/encrypt"
-	"github.com/adely-rya/oram/storage"
 )
 
 func NewMemory[V any](
@@ -90,7 +90,7 @@ func newORAMWithParameters[T ORAMValue[T]](
 	type largeBucket = eoram.LargeBucket[eoram.NodeBlock[T]]
 	type ciphertext = encrypt.Ciphertext[largeBucket]
 
-	file, err := storage.NewFileStorage[ciphertext](
+	file, err := padding.New[ciphertext](
 		filePath,
 		layout.PhysicalBucketCount(),
 	)
@@ -103,7 +103,7 @@ func newORAMWithParameters[T ORAMValue[T]](
 		_ = file.Close()
 		return nil, fmt.Errorf("enigmap: initialize Large Bucket encryption: %w", err)
 	}
-	encryptedStorage := encrypt.NewEncryptIO(file, encryption)
+	encryptedStorage := encrypt.New(file, encryption)
 
 	largeBucketStorage, err := eoram.NewLargeBucketStorage[eoram.NodeBlock[T]](
 		encryptedStorage,
