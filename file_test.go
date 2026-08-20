@@ -15,9 +15,9 @@ var omapBenchmarkSizes = [...]struct {
 	name string
 	size int
 }{
-	{name: "2^21-2", size: (1 << 21)-2},
-	{name: "2^24-2", size: (1 << 24)-2},
-	{name: "2^27-2", size: (1 << 27)-2},
+	{name: "2^20-2", size: (1 << 20)-2},
+	{name: "2^23-2", size: (1 << 23)-2},
+	{name: "2^26-2", size: (1 << 26)-2},
 }
 
 type oramLatencyValue = eoram.FixedValue
