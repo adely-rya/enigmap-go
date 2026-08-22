@@ -5,7 +5,7 @@ import (
 
 	"github.com/adely-rya/enigmap-go/avl"
 	"github.com/adely-rya/enigmap-go/nodestore/eoram"
-	"github.com/adely-rya/enigmap-go/padding"
+	"github.com/adely-rya/oram/storage"
 )
 
 // NewORAMForProfile exposes internal sizing parameters for diagnostic runs.
@@ -46,7 +46,7 @@ func NewORAMForProfileUnencrypted[T ORAMValue[T]](
 	}
 
 	type largeBucket = eoram.LargeBucket[eoram.NodeBlock[T]]
-	file, err := padding.New[largeBucket](
+	file, err := storage.NewFileStorage[largeBucket](
 		filePath,
 		layout.PhysicalBucketCount(),
 	)

@@ -2,8 +2,6 @@ package eoram
 
 import (
 	"testing"
-
-	"github.com/adely-rya/enigmap-go/padding"
 )
 
 func TestLargeBucketSerializationRoundTrip(t *testing.T) {
@@ -39,15 +37,5 @@ func TestLargeBucketContentSize(t *testing.T) {
 	var largeBucket LargeBucket[serializablePayload]
 	if got := largeBucket.ContentSize(); got != serializedLargeBucketSize {
 		t.Fatalf("ContentSize = %d, want %d", got, serializedLargeBucketSize)
-	}
-}
-
-func TestLargeBucketFitsPaddingBlock(t *testing.T) {
-	if serializedLargeBucketSize > padding.BlockSize {
-		t.Fatalf(
-			"serialized Large Bucket size = %d, exceeds padding block size %d",
-			serializedLargeBucketSize,
-			padding.BlockSize,
-		)
 	}
 }
