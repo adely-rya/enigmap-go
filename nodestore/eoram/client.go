@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"math"
 	"math/bits"
 	"time"
 
@@ -84,10 +83,7 @@ func NewOramClient[T core.Selectable[T]](
 	storage core.IO[Bucket[NodeBlock[T]]],
 	bucketSize int,
 ) (*Client[T], error) {
-	stashSize := int(math.Ceil(
-		(float64(securityBits) + math.Log2(14.0)) /
-			(-math.Log2(0.6002)),
-	))
+	stashSize := 105
 	return NewOramClientWithStashSize(storage, bucketSize, stashSize)
 }
 

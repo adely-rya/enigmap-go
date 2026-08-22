@@ -706,7 +706,7 @@ func evictFixedValueToPathInto(
 		return path
 	}
 
-	overflowTag := uint64(pathLength)
+	overflowTag := uint64(pathLength) //pathLengthがスタッシュに置いておくことを示すタグ
 	baseSize := len(stash.blocks)
 	pathBlockCount := pathLength * bucketSize
 	workLength := baseSize + pathBlockCount
