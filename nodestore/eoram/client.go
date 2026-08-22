@@ -73,7 +73,7 @@ func NewOramClient[T core.Selectable[T]](
 	storage core.IO[Bucket[NodeBlock[T]]],
 	bucketSize int,
 ) (*Client[T], error) {
-	stashSize := 105 // Stash capacity for 128-bit security with Z=5.
+	stashSize := 147 // Stash capacity for 128-bit security with Z=5.
 	return NewOramClientWithStashSize(storage, bucketSize, stashSize)
 }
 
