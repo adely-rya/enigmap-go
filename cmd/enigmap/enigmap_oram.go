@@ -7,7 +7,7 @@ import (
 	enigmap "github.com/adely-rya/enigmap-go"
 )
 
-func runORAM(filePath string) error {
+func runORAMFile(filePath string) error {
 	key := make([]byte, 32)
 	if _, err := rand.Read(key); err != nil {
 		return fmt.Errorf("generate ORAM encryption key: %w", err)
@@ -23,6 +23,6 @@ func runORAM(filePath string) error {
 		return fmt.Errorf("run ORAM map: %w", err)
 	}
 
-	fmt.Printf("oram: Put/overwrite/Get succeeded for all %d entries\n", entryCount)
+	fmt.Printf("oram/file/aes-gcm: Put/overwrite/Get succeeded for all %d entries\n", entryCount)
 	return nil
 }

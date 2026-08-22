@@ -6,22 +6,49 @@ import (
 	"log"
 )
 
+type runConfig struct {
+	access     string
+	storage    string
+	encryption string
+	filePath   string
+}
+
 func main() {
-	backend := flag.String("backend", "memory", "backend to run: memory or oram")
-	filePath := flag.String("file", "enigmap-oram.db", "ORAM storage file path")
+	access := flag.String("access", "direct", "access method: direct or oram")
+	storage := flag.String("storage", "memory", "physical storage: memory or file")
+	encryption := flag.String("encryption", "none", "storage encryption: none or aes-gcm")
+	filePath := flag.String("file", "enigmap-oram.db", "file storage path")
 	flag.Parse()
 
-	var err error
-	switch *backend {
-	case "memory":
-		err = runMemory()
-	case "oram":
-		err = runORAM(*filePath)
-	default:
-		err = fmt.Errorf("unknown backend %q: use memory or oram", *backend)
+	config := runConfig{
+		access:     *access,
+		storage:    *storage,
+		encryption: *encryption,
+		filePath:   *filePath,
 	}
-
-	if err != nil {
+	if err := run(config); err != nil {
 		log.Fatal(err)
+	}
+}
+
+func run(config runConfig) error {
+	// Supported configurations are direct/memory/none and oram/file/aes-gcm.
+	// Other combinations require additional storage or encryption adapters.
+	switch {
+	case config.access == "direct" &&
+		config.storage == "memory" &&
+		config.encryption == "none":
+		return runDirectMemory()
+	case config.access == "oram" &&
+		config.storage == "file" &&
+		config.encryption == "aes-gcm":
+		return runORAMFile(config.filePath)
+	default:
+		return fmt.Errorf(
+			"unsupported configuration: access=%s storage=%s encryption=%s",
+			config.access,
+			config.storage,
+			config.encryption,
+		)
 	}
 }

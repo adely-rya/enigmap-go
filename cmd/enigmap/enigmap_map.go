@@ -6,7 +6,7 @@ import (
 	enigmap "github.com/adely-rya/enigmap-go"
 )
 
-func runMemory() error {
+func runDirectMemory() error {
 	store, err := enigmap.NewMemory[exampleValue](maxNodes)
 	if err != nil {
 		return fmt.Errorf("create memory map: %w", err)
@@ -16,6 +16,6 @@ func runMemory() error {
 		return fmt.Errorf("run memory map: %w", err)
 	}
 
-	fmt.Printf("memory: Put/overwrite/Get succeeded for all %d entries\n", entryCount)
+	fmt.Printf("direct/memory/none: Put/overwrite/Get succeeded for all %d entries\n", entryCount)
 	return nil
 }
