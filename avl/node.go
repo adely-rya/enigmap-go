@@ -14,12 +14,12 @@ type Pointer struct {
 type Balance uint8
 
 const (
-	BalanceLeft     Balance = iota //左に１つ子が多い
-	BalanceRight                   //右に1つ子が多い
-	BalanceBalanced                //左右の高さが同じ
+	BalanceLeft Balance = iota
+	BalanceRight
+	BalanceBalanced
 )
 
-func selectNodeID(current, candidate NodeID, condition int) NodeID { //conditionが0ならcurrent 1ならcandinateが選択
+func selectNodeID(current, candidate NodeID, condition int) NodeID {
 	mask := uint64(0) - uint64(condition&1)
 	return NodeID(
 		(uint64(current) &^ mask) |

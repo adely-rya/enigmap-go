@@ -149,7 +149,6 @@ func NewOramClientWithStashSize[T core.Selectable[T]](
 	return client, nil
 }
 
-// ランダムにリーフを選定する
 func (client *Client[T]) NewPosition() (avl.ORAMPosition, error) {
 	client.stats.NewPositions++
 	if _, err := io.ReadFull(client.random, client.randomBytes[:]); err != nil {
@@ -219,7 +218,6 @@ func (client *Client[T]) BeginAccess(pointer avl.Pointer, newLeaf avl.ORAMPositi
 
 // FinishAccess updates the AVL node opened by BeginAccess.
 func (client *Client[T]) FinishAccess(token avl.AccessToken, node avl.Node[T]) error {
-	//先にBeginAccessが呼ばれているかを検証
 	if err := client.validateFinishAccess(token); err != nil {
 		return err
 	}

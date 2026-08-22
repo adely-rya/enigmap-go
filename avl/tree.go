@@ -74,7 +74,7 @@ func calculateMaxDepth(maxNodes uint64) int {
 	return baseDepth + baseDepth/2 + 1
 }
 
-// AVL探索は、終了した深さを隠すため常にmaxDepth回のnode accessを行う。
+// Tree operations perform maxDepth node accesses.
 
 // Root returns the fixed root sentinel ID.
 func (t *Tree[V]) Root() Pointer {

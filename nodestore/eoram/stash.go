@@ -32,7 +32,6 @@ func (block Block[T]) MakeStashedBlock(sticky int) StashedBlock[T] {
 func (stash *Stash[T]) Put(block Block[T]) int {
 	exists := 0
 
-	//同じブロックがスタッシュにあるかの判定
 	for index := 0; index < len(stash.blocks); index++ {
 		current := stash.blocks[index]
 		exists |= block.Valid &
@@ -51,7 +50,7 @@ func (stash *Stash[T]) Put(block Block[T]) int {
 		match := current.Block.Valid & utils.CtEqUint64(
 			uint64(current.Block.BlockAddress),
 			uint64(block.BlockAddress),
-		) //同じアドレスでエントリーがリアルか判定
+		)
 		update := exists & match
 		insert := utils.CtNot(exists) & block.Valid &
 			utils.CtNot(current.Block.Valid) & utils.CtNot(inserted)
@@ -269,11 +268,7 @@ func (stash *Stash[T]) AddPath(path []Bucket[T], bucketSize int) int {
 	return added
 }
 
-// addFixedValuePath concatenates the current fixed-capacity stash and the
-// complete path into one public-size work buffer. The normal Client
-// constructor reserves this tail capacity once, so the hot path only reslices
-// the existing backing array. A heap growth remains as a compatibility
-// fallback for manually constructed or unusually large profiling stashes.
+// addFixedValuePath appends a complete path to the fixed-capacity stash.
 func addFixedValuePath(
 	stash *Stash[NodeBlock[FixedValue]],
 	path []Bucket[NodeBlock[FixedValue]],
@@ -311,11 +306,7 @@ func addFixedValuePath(
 	return 1
 }
 
-// fixedEvictionEntry mirrors EnigMap's TaggedT<StashedBlock_t>. specialDummy
-// distinguishes the per-level counter sentinels (and ordinary invalid input
-// blocks) from real entries and from padding dummies that must occupy path
-// slots. tag is shallowness from the leaf: 0 is the leaf bucket and
-// pathLength-1 is the root. pathLength itself is the overflow/stash tag.
+// fixedEvictionEntry is the tagged record used by sort-based eviction.
 type fixedEvictionEntry struct {
 	stashed      StashedBlock[NodeBlock[FixedValue]]
 	tag          uint64
@@ -325,9 +316,7 @@ type fixedEvictionEntry struct {
 const fixedEvictionEntrySize = int(unsafe.Sizeof(fixedEvictionEntry{}))
 const fixedEvictionEntryWordCount = fixedEvictionEntrySize / 8
 
-// Keep the fixed-sort scratch area below the compiler's large-stack-object
-// threshold. With the current 128-byte entry this provides 768 entries, enough
-// for the default 179-slot stash plus two complete 64-level, Z=4 path regions.
+// Keep the fixed-sort scratch area below the compiler's large-stack threshold.
 const fixedEvictionStackBudget = 96 << 10
 const fixedEvictionStackEntryCapacity = fixedEvictionStackBudget / fixedEvictionEntrySize
 
@@ -410,9 +399,7 @@ func nextPowerOfTwo(value int) int {
 	return power
 }
 
-// obliviousSortFixedEviction is the arbitrary-length bitonic network used by
-// EnigMap's ObliSort(). Every compare/exchange address is a function only of
-// the public work-buffer length; compare outcomes only feed branchless swaps.
+// obliviousSortFixedEviction applies a fixed-trace bitonic sort.
 func obliviousSortFixedEviction(
 	entries []fixedEvictionEntry,
 	sortKind int,
@@ -545,10 +532,7 @@ func (stash *Stash[T]) validBlockCount() int {
 	return count
 }
 
-// EvictToPath fills a root-to-leaf path from the deepest bucket. FixedValue
-// fixed-capacity stashes use the EnigMap sort-based eviction below; other
-// stashes retain the generic greedy fallback. Sticky entries remain in the
-// stash even when their position is on the path.
+// EvictToPath evicts eligible stash blocks onto a root-to-leaf path.
 func (stash *Stash[T]) EvictToPath(
 	leaf Leaf,
 	pathLength int,
@@ -562,9 +546,7 @@ func (stash *Stash[T]) EvictToPath(
 	)
 }
 
-// EvictToPathInto is the allocation-free internal path used by Client. The
-// caller supplies fixed public-size scratch storage; the eviction scan and sort
-// schedule is identical to EvictToPath and does not depend on secret data.
+// EvictToPathInto uses caller-provided fixed-size scratch storage.
 func (stash *Stash[T]) EvictToPathInto(
 	path []Bucket[T],
 	leaf Leaf,
@@ -589,8 +571,6 @@ func (stash *Stash[T]) EvictToPathInto(
 	var stackUsed [BucketSize]int
 	used := stackUsed[:]
 	if bucketSize > len(stackUsed) {
-		// Generic callers may choose a nonstandard Z. The normal ENIGMAP path is
-		// Z=BucketSize and therefore stays allocation-free.
 		used = make([]int, bucketSize)
 	} else {
 		used = used[:bucketSize]
@@ -602,7 +582,7 @@ func (stash *Stash[T]) EvictToPathInto(
 
 		for slot := 0; slot < bucketSize; slot++ {
 			used[slot] = 0
-		} //空のroot→leaf pathを作る
+		}
 
 		for index := 0; index < len(stash.blocks); index++ {
 			current := stash.blocks[index]
@@ -663,18 +643,7 @@ func preparePathScratch[T core.Selectable[T]](
 	return true
 }
 
-// evictFixedValueToPath follows EnigMap's sort-based Path ORAM eviction:
-//
-//  1. tag stash+path blocks by their deepest compatible path level;
-//  2. obliviously sort by tag and count each exact-tag run;
-//  3. obliviously sort the per-level counters to the front;
-//  4. linearly add the exact amount of path padding required;
-//  5. obliviously sort once more by tag;
-//  6. write the first pathLength*bucketSize entries back to the path and
-//     retain the fixed-capacity remainder as the stash.
-//
-// Sticky blocks receive the overflow tag, preserving the Go client's pinning
-// semantics while keeping the same fixed sort/scan trace.
+// evictFixedValueToPath performs fixed-trace, sort-based path eviction.
 func evictFixedValueToPath(
 	stash *Stash[NodeBlock[FixedValue]],
 	leaf Leaf,
@@ -706,7 +675,7 @@ func evictFixedValueToPathInto(
 		return path
 	}
 
-	overflowTag := uint64(pathLength) //pathLengthがスタッシュに置いておくことを示すタグ
+	overflowTag := uint64(pathLength)
 	baseSize := len(stash.blocks)
 	pathBlockCount := pathLength * bucketSize
 	workLength := baseSize + pathBlockCount
@@ -719,15 +688,9 @@ func evictFixedValueToPathInto(
 	if workLength <= len(stackWork) {
 		work = stackWork[:workLength]
 	} else {
-		// Profile-only custom stash sizes can exceed the bounded stack scratch
-		// area. Preserve their behavior without making the normal hot path pay
-		// a heap allocation.
 		work = make([]fixedEvictionEntry, workLength)
 	}
 
-	// 1) Tag the concatenated old-stash + complete-path work set. Invalid
-	// entries go directly to the overflow tag; sticky entries are valid but are
-	// deliberately made ineligible for this eviction by the same overflow tag.
 	for index := 0; index < baseSize; index++ {
 		entry := stash.blocks[index]
 		invalid := utils.CtNot(entry.Block.Valid)
@@ -738,8 +701,6 @@ func evictFixedValueToPathInto(
 		}
 	}
 
-	// One special sentinel per path level. Sort #1 places each sentinel after
-	// the real entries having the same exact deepest-compatible level.
 	for level := 0; level < pathLength; level++ {
 		work[baseSize+level] = fixedEvictionEntry{
 			tag:          uint64(level),
@@ -748,15 +709,12 @@ func evictFixedValueToPathInto(
 	}
 	originalSize := baseSize + pathLength
 
-	// 2) Sort #1: exact-level runs, with the counter sentinel at each run end.
 	obliviousSortFixedEviction(
 		work[:originalSize],
 		fixedEvictionSortByTag,
 		overflowTag,
 	)
 
-	// 3) Linear count scan. The sentinel's otherwise-unused dummy block address
-	// carries the exact number of real entries in that tag run into sort #2.
 	count := uint64(0)
 	currTag := uint64(0)
 	for index := 0; index < originalSize; index++ {
@@ -771,18 +729,12 @@ func evictFixedValueToPathInto(
 		count = selectUint64(count, 0, isEnd)
 	}
 
-	// 4) Sort #2: move the pathLength counter sentinels to work[0:pathLength]
-	// in level order; ordinary real entries remain behind them.
 	obliviousSortFixedEviction(
 		work[:originalSize],
 		fixedEvictionSortCountersFirst,
 		overflowTag,
 	)
 
-	// 5) Linear padding scan. Maintain the cumulative number of entries that can
-	// reach each leaf-to-root prefix. Whenever that prefix has fewer than its
-	// public target slots, turn the counter sentinel plus up to Z-1 preallocated
-	// work entries into path-padding dummies for this level.
 	count = 0
 	appendIndex := originalSize
 	for level := 0; level < pathLength; level++ {
@@ -809,10 +761,6 @@ func evictFixedValueToPathInto(
 					uint64(level),
 					needPadding,
 				),
-				// These are ordinary path-padding dummies, matching EnigMap's
-				// isDummy=false padding records when needed. Unused preallocated
-				// records are marked special at the overflow tag so they stay
-				// behind sticky real blocks in the fixed-capacity remainder.
 				specialDummy: utils.CtNot(needPadding),
 			}
 			count += uint64(needPadding)
@@ -820,8 +768,6 @@ func evictFixedValueToPathInto(
 		}
 	}
 
-	// 6) Sort #3: first pathBlockCount entries are now exactly the leaf-to-root
-	// path buckets; excess real blocks and sticky blocks follow as stash data.
 	obliviousSortFixedEviction(
 		work,
 		fixedEvictionSortByTag,
@@ -836,9 +782,6 @@ func evictFixedValueToPathInto(
 		}
 	}
 
-	// Keep a fixed public stash size. The final tag sort places all real
-	// overflow entries before special overflow dummies, so a straight linear
-	// copy is sufficient; no per-block stash search/compaction is needed.
 	capacity := stash.capacity
 	if capacity <= 0 {
 		capacity = baseSize - pathBlockCount

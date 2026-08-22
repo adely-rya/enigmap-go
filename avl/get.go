@@ -35,14 +35,14 @@ func (t *Tree[V]) Get(key []byte) (V, bool, error) {
 		)
 
 		comparison := CompareKey(searchKey, node.Key)
-		equal := subtle.ConstantTimeEq(int32(comparison), 0) // if key == node.Key { 1 } else { 0 }; 一致なら1
-		right := subtle.ConstantTimeEq(int32(comparison), 1) // if key > node.Key { 1 } else { 0 }; 右へ進むなら1
-		valid := subtle.ConstantTimeByteEq(node.Valid, 1)    // if node is real { 1 } else { 0 }; 実ノードなら1
-		match := equal & valid                               // if equal == 1 && valid == 1 { 1 } else { 0 }; 実ノードで一致なら1
-		right &= valid                                       // if valid == 0 { right = 0 }; dummyは左へ
+		equal := subtle.ConstantTimeEq(int32(comparison), 0)
+		right := subtle.ConstantTimeEq(int32(comparison), 1)
+		valid := subtle.ConstantTimeByteEq(node.Valid, 1)
+		match := equal & valid
+		right &= valid
 
 		result = selectValue(result, node.Value, match)
-		found |= match // if match == 1 { found = 1 }; 一度一致したら1
+		found |= match
 
 		next := selectPointer(node.Left, node.Right, right)
 		nextNew := pointerWithPosition(next, nextNewPosition)
