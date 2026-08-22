@@ -32,13 +32,17 @@ func main() {
 }
 
 func run(config runConfig) error {
-	// Supported configurations are direct/memory/none and oram/file/aes-gcm.
-	// Other combinations require additional storage or encryption adapters.
+	// Supported configurations are direct/memory/none, oram/memory/aes-gcm,
+	// and oram/file/aes-gcm. Other combinations are not wired into this CLI.
 	switch {
 	case config.access == "direct" &&
 		config.storage == "memory" &&
 		config.encryption == "none":
 		return runDirectMemory()
+	case config.access == "oram" &&
+		config.storage == "memory" &&
+		config.encryption == "aes-gcm":
+		return runORAMMemoryEncrypted()
 	case config.access == "oram" &&
 		config.storage == "file" &&
 		config.encryption == "aes-gcm":
