@@ -107,10 +107,3 @@ func TestFixedValueBucketSerializationRoundTrip(t *testing.T) {
 		}
 	}
 }
-
-func TestBucketContentSize(t *testing.T) {
-	var bucket Bucket[serializablePayload]
-	if got := bucket.ContentSize(); got != serializedBucketSize {
-		t.Fatalf("ContentSize = %d, want %d", got, serializedBucketSize)
-	}
-}

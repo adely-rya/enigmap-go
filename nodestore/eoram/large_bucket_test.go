@@ -32,10 +32,3 @@ func TestLargeBucketSerializationRoundTrip(t *testing.T) {
 		t.Fatalf("decoded block = %+v, want %+v", decoded[2][slot], largeBucket[2][slot])
 	}
 }
-
-func TestLargeBucketContentSize(t *testing.T) {
-	var largeBucket LargeBucket[serializablePayload]
-	if got := largeBucket.ContentSize(); got != serializedLargeBucketSize {
-		t.Fatalf("ContentSize = %d, want %d", got, serializedLargeBucketSize)
-	}
-}

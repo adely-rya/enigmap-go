@@ -643,22 +643,6 @@ func preparePathScratch[T core.Selectable[T]](
 	return true
 }
 
-// evictFixedValueToPath performs fixed-trace, sort-based path eviction.
-func evictFixedValueToPath(
-	stash *Stash[NodeBlock[FixedValue]],
-	leaf Leaf,
-	pathLength int,
-	bucketSize int,
-) []Bucket[NodeBlock[FixedValue]] {
-	return evictFixedValueToPathInto(
-		stash,
-		makeBucketPath[NodeBlock[FixedValue]](pathLength, bucketSize),
-		leaf,
-		pathLength,
-		bucketSize,
-	)
-}
-
 func evictFixedValueToPathInto(
 	stash *Stash[NodeBlock[FixedValue]],
 	path []Bucket[NodeBlock[FixedValue]],

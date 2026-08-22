@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"math/bits"
-	"time"
 
 	"github.com/adely-rya/enigmap-go/avl"
 	"github.com/adely-rya/oram/core"
@@ -15,7 +14,6 @@ import (
 
 const (
 	defaultBucketSize = BucketSize
-	securityBits      = 128
 )
 
 var ErrStashOverflow = errors.New("eoram: stash overflow")
@@ -59,14 +57,6 @@ type Client[T core.Selectable[T]] struct {
 
 type ClientStats struct {
 	Accesses          uint64
-	ReadPathTime      time.Duration
-	AddPathTime       time.Duration
-	PrepareAccessTime time.Duration
-	UpdateBlockTime   time.Duration
-	EvictToPathTime   time.Duration
-	WritePathTime     time.Duration
-	UnpinTime         time.Duration
-	NewPositionTime   time.Duration
 	NewPositions      uint64
 	MaxStashLength    uint64
 	PathBucketsRead   uint64
@@ -83,7 +73,7 @@ func NewOramClient[T core.Selectable[T]](
 	storage core.IO[Bucket[NodeBlock[T]]],
 	bucketSize int,
 ) (*Client[T], error) {
-	stashSize := 105
+	stashSize := 105 // Stash capacity for 128-bit security with Z=5.
 	return NewOramClientWithStashSize(storage, bucketSize, stashSize)
 }
 

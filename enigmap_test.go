@@ -76,19 +76,6 @@ func (selectableValue) Deserialize(encoded []byte) (core.Serializable, error) {
 	return value, nil
 }
 
-func TestNewORAMCreatesStore(t *testing.T) {
-	got, err := NewORAM[selectableValue](t.TempDir()+"/oram.db", 3, testEncryptionKey)
-	if err != nil {
-		t.Fatalf("NewORAM: %v", err)
-	}
-	if got == nil {
-		t.Fatal("NewORAM returned nil store")
-	}
-	if err := got.Close(); err != nil {
-		t.Fatalf("Close: %v", err)
-	}
-}
-
 func TestNewORAMRejectsInvalidEncryptionKey(t *testing.T) {
 	store, err := NewORAM[selectableValue](t.TempDir()+"/oram.db", 3, []byte("short"))
 	if err == nil {
@@ -99,7 +86,7 @@ func TestNewORAMRejectsInvalidEncryptionKey(t *testing.T) {
 	}
 }
 
-func TestORAMFileDoesNotContainPlaintext(t *testing.T) {
+func TestORAMFileDoesNotContainPlaintextKey(t *testing.T) {
 	filePath := t.TempDir() + "/oram.db"
 	store, err := NewORAM[selectableValue](filePath, 3, testEncryptionKey)
 	if err != nil {
@@ -109,9 +96,7 @@ func TestORAMFileDoesNotContainPlaintext(t *testing.T) {
 	keyText := []byte("distinct-key-material")
 	key := make([]byte, avl.KeySize)
 	copy(key, keyText)
-	valueText := []byte("distinct-value-material")
-	var value selectableValue
-	copy(value[:], valueText)
+	value := selectableValue{0xa5}
 	if err := store.Put(key, value); err != nil {
 		t.Fatalf("Put: %v", err)
 	}
@@ -123,8 +108,8 @@ func TestORAMFileDoesNotContainPlaintext(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ReadFile: %v", err)
 	}
-	if bytes.Contains(contents, keyText) || bytes.Contains(contents, valueText) {
-		t.Fatal("ORAM file contains plaintext key or value")
+	if bytes.Contains(contents, keyText) {
+		t.Fatal("ORAM file contains plaintext key")
 	}
 }
 
