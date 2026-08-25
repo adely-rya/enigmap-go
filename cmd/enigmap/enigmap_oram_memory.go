@@ -61,7 +61,7 @@ func newORAMMemoryEncrypted(
 	if err != nil {
 		return nil, fmt.Errorf("initialize Large Bucket encryption: %w", err)
 	}
-	encryptedStorage := encrypt.NewEncryptIO(memoryStorage, encryption)
+	encryptedStorage := encrypt.New(memoryStorage, encryption)
 
 	largeBucketStorage, err := eoram.NewLargeBucketStorage[eoram.NodeBlock[exampleValue]](
 		encryptedStorage,
