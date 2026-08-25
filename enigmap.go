@@ -103,7 +103,7 @@ func newORAMWithParameters[T ORAMValue[T]](
 		_ = file.Close()
 		return nil, fmt.Errorf("enigmap: initialize Large Bucket encryption: %w", err)
 	}
-	encryptedStorage := encrypt.NewEncryptIO(file, encryption)
+	encryptedStorage := encrypt.New(file, encryption)
 
 	largeBucketStorage, err := eoram.NewLargeBucketStorage[eoram.NodeBlock[T]](
 		encryptedStorage,
