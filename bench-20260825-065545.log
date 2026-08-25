@@ -1,0 +1,21 @@
+2026/08/25 06:55:55 INFO EGo version=1.9.0 git_commit=6f8b18f24006383d1b38ba1cf06c3e95652bf1a7
+[erthost] loading enclave ...
+[erthost] entering enclave ...
+ERROR: kernel doesn't provide vDSO clock [src/ert/host/vdso.cpp:oe_get_clock_vdso_pointers_ocall:132]
+[ego] starting application ...
+goos: linux
+goarch: amd64
+pkg: github.com/adely-rya/enigmap-go
+BenchmarkORAMMemoryStoreLatency/2^20-2/Initialization-24         	      10	 627791428 ns/op	980399072 B/op	  599280 allocs/op
+BenchmarkORAMMemoryStoreLatency/2^20-2/Put-24                    	      10	  23336246 ns/op	       0 B/op	       0 allocs/op
+BenchmarkORAMMemoryStoreLatency/2^20-2/OverwritePut-24           	      10	  22822905 ns/op	       0 B/op	       0 allocs/op
+BenchmarkORAMMemoryStoreLatency/2^20-2/Get-24                    	      10	  11393246 ns/op	       0 B/op	       0 allocs/op
+BenchmarkORAMMemoryStoreLatency/2^23-2/Initialization-24         	      10	4727979048 ns/op	7842308872 B/op	 4794097 allocs/op
+BenchmarkORAMMemoryStoreLatency/2^23-2/Put-24                    	      10	  28480757 ns/op	       0 B/op	       0 allocs/op
+BenchmarkORAMMemoryStoreLatency/2^23-2/OverwritePut-24           	      10	  27860071 ns/op	       0 B/op	       0 allocs/op
+BenchmarkORAMMemoryStoreLatency/2^23-2/Get-24                    	      10	  13948624 ns/op	       0 B/op	       0 allocs/op
+BenchmarkORAMMemoryStoreLatency/2^26-2/Initialization-24         	      10	37009849393 ns/op	62737684801 B/op	38352629 allocs/op
+BenchmarkORAMMemoryStoreLatency/2^26-2/Put-24                    	      10	  35166074 ns/op	       0 B/op	       0 allocs/op
+BenchmarkORAMMemoryStoreLatency/2^26-2/OverwritePut-24           	      10	  34464845 ns/op	       0 B/op	       0 allocs/op
+BenchmarkORAMMemoryStoreLatency/2^26-2/Get-24                    	      10	  17243870 ns/op	       0 B/op	       0 allocs/op
+PASS
